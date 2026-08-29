@@ -58,7 +58,7 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       REMINDER_FIELD,
     ],
     expiryFields: [{ key: "endDate", label: "Agreement End" }],
-    closedStatusField: { key: "siteStatus", closedValues: ["closed"] },
+    closedStatusField: { key: "siteStatus", closedValues: ["closed", "close"] },
   },
   {
     slug: "food-license",
@@ -76,7 +76,7 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       REMINDER_FIELD,
     ],
     expiryFields: [{ key: "endDate", label: "FSSAI End" }],
-    closedStatusField: { key: "siteStatus", closedValues: ["closed"] },
+    closedStatusField: { key: "siteStatus", closedValues: ["closed", "close"] },
   },
   {
     slug: "wc-policy",
@@ -95,7 +95,7 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       REMINDER_FIELD,
     ],
     expiryFields: [{ key: "endDate", label: "WC Policy End" }],
-    closedStatusField: { key: "siteStatus", closedValues: ["closed"] },
+    closedStatusField: { key: "siteStatus", closedValues: ["closed", "close"] },
   },
   {
     slug: "labour-license",
@@ -115,7 +115,7 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       REMINDER_FIELD,
     ],
     expiryFields: [{ key: "endDate", label: "License End" }],
-    closedStatusField: { key: "siteStatus", closedValues: ["closed"] },
+    closedStatusField: { key: "siteStatus", closedValues: ["closed", "close"] },
   },
   {
     slug: "vehicles",

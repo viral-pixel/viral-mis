@@ -38,5 +38,5 @@ export async function GET() {
   });
 
   const buffer = buildXlsxResponseBuffer("Purchase Report", headers, rows);
-  return new NextResponse(buffer, { headers: xlsxDownloadHeaders("purchase-report.xlsx") });
+  return new NextResponse(new Uint8Array(buffer), { headers: xlsxDownloadHeaders("purchase-report.xlsx") });
 }

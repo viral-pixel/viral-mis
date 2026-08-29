@@ -11,22 +11,23 @@ const prisma = new PrismaClient();
 const FILE = "C:\\Users\\HP\\OneDrive\\Desktop\\AI\\Analysis Related\\Ketan Related\\MIS_Ketan Format.xlsx";
 const BATCH = `ketan-mis-${new Date().toISOString().slice(0, 10)}`;
 
-// Most date cells arrive as JS Date objects thanks to { cellDates: true },
-// but some rows in the source file use a number format SheetJS doesn't
-// recognize as a date, so they leak through as a raw Excel day-serial
-// number (e.g. 43524) instead. Passing that straight to `new Date()` is a
-// real bug — JS reads a bare number as milliseconds-since-epoch, producing
-// bogus "01 Jan 1970"-ish results (caught during import verification,
-// 2026-08-29). Excel serials must go through SSF's date-code parser.
+// Read with cellDates:false (see below) so every date cell arrives as a
+// raw Excel day-serial number, then converted here via SSF's date-code
+// parser — verified correct against a real cell's Excel formula-bar value
+// (serial 45658 = "01-01-2025", matching parse_date_code exactly).
+// Do NOT trust `cellDates: true`: it was tried first and is measurably
+// wrong — it turned that same serial into "2024-12-31T18:29:50Z", a
+// different calendar day plus a bogus time-of-day (caught 2026-08-29 when
+// the user cross-checked a real cell against Excel's own formula bar).
 function asDate(v: unknown): Date | null {
   if (v === undefined || v === null || v === "") return null;
-  if (v instanceof Date) return v;
   if (typeof v === "string" && v.trim().toUpperCase() === "NA") return null;
   if (typeof v === "number") {
     const parsed = XLSX.SSF.parse_date_code(v);
     if (!parsed) return null;
     return new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, Math.floor(parsed.S || 0)));
   }
+  if (v instanceof Date) return new Date(Date.UTC(v.getFullYear(), v.getMonth(), v.getDate()));
   const d = new Date(v as string);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -57,7 +58,7 @@ async function clearPreviousImport() {
 
 async function main() {
   await clearPreviousImport();
-  const wb = XLSX.readFile(FILE, { cellDates: true });
+  const wb = XLSX.readFile(FILE, { cellDates: false });
   const sheet = (name: string) =>
     XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, raw: true, defval: "" });
 

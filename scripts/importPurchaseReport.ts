@@ -15,14 +15,19 @@ function norm(s: string) {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+// cellDates:false + parse_date_code below — verified correct against a
+// real cell's Excel formula-bar value (serial 45658 = "01-01-2025").
+// `cellDates: true` was tried first and is measurably wrong: it turns
+// that same serial into "2024-12-31T18:29:50Z" (caught 2026-08-29 when
+// the user cross-checked a real cell against Excel's own formula bar).
 function excelValueToDate(v: unknown): Date | null {
   if (v === null || v === undefined || v === "") return null;
-  if (v instanceof Date) return v;
   if (typeof v === "number") {
     const parsed = XLSX.SSF.parse_date_code(v);
     if (!parsed) return null;
     return new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d));
   }
+  if (v instanceof Date) return new Date(Date.UTC(v.getFullYear(), v.getMonth(), v.getDate()));
   const d = new Date(v as string);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -34,8 +39,16 @@ function excelValueToNumber(v: unknown): number | null {
 }
 
 async function main() {
-  const wb = XLSX.readFile(FILE, { cellDates: true });
-  const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets["Sheet1"], { defval: null });
+  // Re-running this script (e.g. after the date-parsing fix, 2026-08-29)
+  // changes the `month` value for existing rows, so upsertMonthEntries'
+  // (month, itemCategoryId) match would miss the old rows entirely and
+  // create duplicates instead of correcting them. Clear prior import-
+  // sourced rows first — scoped to enteredBy="import" so it never touches
+  // real data entered by hand through the app.
+  await prisma.monthlyPurchase.deleteMany({ where: { enteredBy: "import" } });
+
+  const wb = XLSX.readFile(FILE, { cellDates: false });
+  const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets["Sheet1"], { defval: null, raw: true });
   if (rows.length === 0) throw new Error("No rows found in Sheet1");
 
   const items = await prisma.purchaseItemCategory.findMany({ orderBy: { sortOrder: "asc" } });

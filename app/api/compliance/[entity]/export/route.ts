@@ -27,5 +27,5 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ent
   );
 
   const buffer = buildXlsxResponseBuffer(entity.label.slice(0, 31), headers, dataRows);
-  return new NextResponse(buffer, { headers: xlsxDownloadHeaders(`${entity.slug}.xlsx`) });
+  return new NextResponse(new Uint8Array(buffer), { headers: xlsxDownloadHeaders(`${entity.slug}.xlsx`) });
 }

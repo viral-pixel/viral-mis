@@ -137,7 +137,7 @@ function AnalysisTab({ items }: { items: PurchaseItem[] }) {
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
               <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
               <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
-              <Tooltip formatter={(v: number) => fmtMoney(v)} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+              <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
               <Bar dataKey="totalAmount" fill={C.teal} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -149,7 +149,7 @@ function AnalysisTab({ items }: { items: PurchaseItem[] }) {
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
               <XAxis type="number" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
               <YAxis type="category" dataKey="name" width={110} tick={{ fontFamily: FONT_BODY, fontSize: 11.5, fill: C.ink }} />
-              <Tooltip formatter={(v: number) => fmtMoney(v)} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+              <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
               <Bar dataKey="totalAmount" fill={C.amber} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
