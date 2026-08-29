@@ -105,11 +105,12 @@ export default function PurchasePage() {
 }
 
 function FilterBar({
-  from, to, groupId, groups, onChange, groupLabel = "Commodity",
+  from, to, groupId, groups, onChange, showGroupFilter = true, groupLabel = "Commodity",
 }: {
-  from: string; to: string; groupId: string;
+  from: string; to: string; groupId?: string;
   groups: PurchaseGroup[];
   onChange: (v: { from?: string; to?: string; groupId?: string }) => void;
+  showGroupFilter?: boolean;
   groupLabel?: string;
 }) {
   return (
@@ -120,12 +121,14 @@ function FilterBar({
       <Field label="To month">
         <Input type="month" value={to} onChange={(e) => onChange({ to: e.target.value })} />
       </Field>
-      <Field label={groupLabel}>
-        <Select value={groupId} onChange={(e) => onChange({ groupId: e.target.value })} style={{ minWidth: 200 }}>
-          <option value="">All commodities</option>
-          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-        </Select>
-      </Field>
+      {showGroupFilter && (
+        <Field label={groupLabel}>
+          <Select value={groupId ?? ""} onChange={(e) => onChange({ groupId: e.target.value })} style={{ minWidth: 200 }}>
+            <option value="">All commodities</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </Select>
+        </Field>
+      )}
       {(from || to || groupId) && (
         <Btn variant="ghost" onClick={() => onChange({ from: "", to: "", groupId: "" })}>Clear filters</Btn>
       )}
@@ -134,9 +137,15 @@ function FilterBar({
 }
 
 function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
+  // Deliberately no commodity filter here: the stat cards, monthly trend,
+  // and "Cost by Commodity" breakdown all need to see EVERY commodity to
+  // mean anything — filtering them down to one commodity collapses the
+  // breakdown chart to a single bar, which is meaningless (caught via user
+  // feedback + screenshot, 2026-08-29). Only month range narrows this
+  // section. Per-commodity drill-down lives in its own selector below,
+  // completely independent of these.
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [groupId, setGroupId] = useState("");
   const [stats, setStats] = useState<PurchaseStats | null>(null);
   const [trendGroupId, setTrendGroupId] = useState<number | null>(null);
   const [trend, setTrend] = useState<{ monthLabel: string; amount: number | null; quantity: number | null; costPerUnit: number | null }[] | null>(null);
@@ -145,9 +154,8 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
     const p = new URLSearchParams();
     if (from) p.set("from", from);
     if (to) p.set("to", to);
-    if (groupId) p.set("groupId", groupId);
     return p.toString();
-  }, [from, to, groupId]);
+  }, [from, to]);
 
   useEffect(() => {
     setStats(null);
@@ -155,10 +163,10 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
   }, [qs]);
 
   useEffect(() => {
-    if (stats && stats.costByGroup.length > 0 && trendGroupId === null) {
-      setTrendGroupId(stats.costByGroup[0].groupId);
+    if (groups.length > 0 && trendGroupId === null) {
+      setTrendGroupId(groups[0].id);
     }
-  }, [stats, trendGroupId]);
+  }, [groups, trendGroupId]);
 
   useEffect(() => {
     if (!trendGroupId) return;
@@ -172,11 +180,10 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
 
   return (
     <div>
-      <FilterBar from={from} to={to} groupId={groupId} groups={groups} onChange={(v) => {
+      <FilterBar from={from} to={to} groups={groups} showGroupFilter={false} onChange={(v) => {
         if (v.from !== undefined) setFrom(v.from);
         if (v.to !== undefined) setTo(v.to);
-        if (v.groupId !== undefined) setGroupId(v.groupId);
-      }} groupLabel="Commodity (for breakdown / stat cards)" />
+      }} />
 
       {!stats ? (
         <Empty text="Loading…" />
@@ -216,45 +223,58 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
             </ChartPanel>
           </div>
 
-          <div style={{ marginBottom: 10 }}>
-            <Field label="Commodity for detailed trend below">
+          <div style={{ marginTop: 28, marginBottom: 10 }}>
+            <h3 style={{ margin: "0 0 2px", fontSize: 15, fontWeight: 700, color: C.ink }}>Amount vs. Quantity — by commodity</h3>
+            <div style={{ color: C.sub, fontSize: 12.5, marginBottom: 10 }}>
+              Pick one commodity to see its cost and volume trends side by side, independent of the filters above.
+            </div>
+            <Field label="Commodity">
               <Select value={trendGroupId ?? ""} onChange={(e) => setTrendGroupId(Number(e.target.value))} style={{ maxWidth: 320 }}>
                 {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </Select>
             </Field>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: selectedGroup?.hasAmount && selectedGroup?.hasQuantity ? "1fr 1fr" : "1fr", gap: 16 }}>
-            {selectedGroup?.hasAmount && (
-              <ChartPanel title="Amount Analysis" sub={`${selectedGroup.name} — ₹ spent per month`}>
-                {!trend ? <Empty text="Loading…" /> : trend.length === 0 ? <Empty text="No data yet." /> : (
-                  <ResponsiveContainer width="100%" height={240}>
-                    <LineChart data={trend} margin={{ left: 0, right: 16 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
-                      <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
-                      <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
-                      <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
-                      <Line type="monotone" dataKey="amount" name="Amount (₹)" stroke={CHART_COLORS[0]} strokeWidth={2} dot={{ r: 3 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </ChartPanel>
-            )}
-            {selectedGroup?.hasQuantity && (
-              <ChartPanel title="Quantity Analysis" sub={`${selectedGroup.name} — volume purchased per month (${selectedGroup.unit || "units"})`}>
-                {!trend ? <Empty text="Loading…" /> : trend.length === 0 ? <Empty text="No data yet." /> : (
-                  <ResponsiveContainer width="100%" height={240}>
-                    <LineChart data={trend} margin={{ left: 0, right: 16 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
-                      <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
-                      <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
-                      <Tooltip contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
-                      <Line type="monotone" dataKey="quantity" name={`Quantity (${selectedGroup.unit || "units"})`} stroke={CHART_COLORS[1]} strokeWidth={2} dot={{ r: 3 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </ChartPanel>
-            )}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <ChartPanel title="Amount Analysis" sub={`${selectedGroup?.name ?? ""} — ₹ spent per month`}>
+              {!selectedGroup?.hasAmount ? (
+                <Empty text={`${selectedGroup?.name ?? "This commodity"} doesn't track Amount — only Quantity is recorded for it.`} />
+              ) : !trend ? (
+                <Empty text="Loading…" />
+              ) : trend.length === 0 ? (
+                <Empty text="No data yet for this commodity." />
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart data={trend} margin={{ left: 0, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                    <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                    <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                    <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                    <Line type="monotone" dataKey="amount" name="Amount (₹)" stroke={CHART_COLORS[0]} strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </ChartPanel>
+
+            <ChartPanel title="Quantity Analysis" sub={`${selectedGroup?.name ?? ""} — volume purchased per month${selectedGroup?.unit ? ` (${selectedGroup.unit})` : ""}`}>
+              {!selectedGroup?.hasQuantity ? (
+                <Empty text={`${selectedGroup?.name ?? "This commodity"} doesn't track Quantity — only Amount is recorded for it.`} />
+              ) : !trend ? (
+                <Empty text="Loading…" />
+              ) : trend.length === 0 ? (
+                <Empty text="No data yet for this commodity." />
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart data={trend} margin={{ left: 0, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                    <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                    <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                    <Tooltip contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                    <Line type="monotone" dataKey="quantity" name={`Quantity (${selectedGroup?.unit || "units"})`} stroke={CHART_COLORS[1]} strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </ChartPanel>
           </div>
           {selectedGroup?.hasAmount && selectedGroup?.hasQuantity && trend && trend.some((t) => t.costPerUnit != null) && (
             <ChartPanel title="Cost per Unit" sub={`${selectedGroup.name} — ₹ per ${selectedGroup.unit || "unit"}, derived from Amount ÷ Quantity`} style={{ marginTop: 16 }}>
