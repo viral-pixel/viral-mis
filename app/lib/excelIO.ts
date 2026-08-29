@@ -12,6 +12,18 @@ export function buildXlsxResponseBuffer(sheetName: string, headers: string[], ro
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
+// Multi-sheet variant — used by modules whose data naturally splits into
+// more than one table (e.g. Vegetable Reports: purchases / potato-onion /
+// cash entries each get their own sheet in one downloaded file).
+export function buildMultiSheetXlsxBuffer(sheets: { name: string; headers: string[]; rows: (string | number | null)[][] }[]): Buffer {
+  const wb = XLSX.utils.book_new();
+  for (const s of sheets) {
+    const ws = XLSX.utils.aoa_to_sheet([s.headers, ...s.rows]);
+    XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31));
+  }
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
 export function xlsxDownloadHeaders(filename: string) {
   return {
     "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -34,6 +46,19 @@ export async function parseUploadedSheet(file: File): Promise<Record<string, unk
   const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
   const ws = wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
+}
+
+// Reads every sheet of an uploaded multi-sheet workbook (see
+// buildMultiSheetXlsxBuffer), keyed by sheet name — for modules whose
+// export has more than one tab.
+export async function parseUploadedWorkbook(file: File): Promise<Record<string, Record<string, unknown>[]>> {
+  const buf = Buffer.from(await file.arrayBuffer());
+  const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
+  const result: Record<string, Record<string, unknown>[]> = {};
+  for (const name of wb.SheetNames) {
+    result[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null, raw: true });
+  }
+  return result;
 }
 
 // Converts a raw cell value into a real Date. Numeric Excel day-serials go

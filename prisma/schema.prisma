@@ -361,3 +361,107 @@ model RentAgreement {
 
   @@index([validTill])
 }
+
+// ---- SubModule: "Vegetable & Produce Purchase" (Ketan, sub-module 3) ----
+// Source: a 20-sheet workbook covering ~14 months of daily purchases. Real
+// structure found on reading it (2026-08-29): a fixed 70-item vegetable/
+// fruit master list (order must never change — other sheets/links depend
+// on it), daily purchase entries against that list tagged by vendor (the
+// vendor "slots" the user calls Jakir/Raju — count varies over time, 1
+// vendor before May-26, 2 from May-26 on, could grow to 3-4), a separate
+// Potato/Onion/Garlic bill register with its own fields, and two lump-sum-
+// only daily categories (Fruit & Cash Purchase, Onion & Garlic Flakes)
+// that were never tracked item-by-item in the source and stay that way
+// here per the user's explicit choice.
+
+model VegetableItem {
+  id        Int      @id @default(autoincrement())
+  srNo      Int      @unique // preserves the original Sr. No. — append-only, never renumbered
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  purchases VegetablePurchaseEntry[]
+}
+
+// Shared by both vegetable purchases and the Potato/Onion register — an
+// editable company list, same "Vendor Master" pattern as the Asset
+// Management tool (one list, not split per domain).
+model VegetableVendor {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  purchases       VegetablePurchaseEntry[]
+  potatoOnionBuys PotatoOnionEntry[]
+}
+
+// One row per item purchased from one vendor on one day. Several of these
+// naturally exist for the same day (different items, sometimes the same
+// item from a different vendor) — this is intentionally granular, matching
+// the source's daily Qty/Rate/Amt entries, not a monthly rollup.
+model VegetablePurchaseEntry {
+  id       Int             @id @default(autoincrement())
+  date     DateTime
+  itemId   Int
+  item     VegetableItem   @relation(fields: [itemId], references: [id])
+  vendorId Int
+  vendor   VegetableVendor @relation(fields: [vendorId], references: [id])
+  quantity Float // Kg (or the item's natural unit — the source doesn't vary units per item)
+  rate     Float
+  amount   Float // = quantity * rate, computed at write time, never typed directly
+
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([itemId])
+  @@index([vendorId])
+}
+
+// Separate from VegetablePurchaseEntry because the source register tracks
+// genuinely different fields (bill/receipt paperwork, not just a purchase
+// line) — kept in full per the user's explicit choice (2026-08-29) rather
+// than simplified down to match the vegetable entry shape.
+model PotatoOnionEntry {
+  id                   Int              @id @default(autoincrement())
+  billNo               String           @default("")
+  billDate             DateTime?
+  materialReceivedDate String           @default("") // free text in the source (e.g. "29-07-2025 Morning") — kept as-is, not a clean date
+  vendorId             Int?
+  vendor               VegetableVendor? @relation(fields: [vendorId], references: [id])
+  source               String           @default("") // broker/contact name
+  item                 String // Potato / Onion / Garlic / Baby Potato / ... — free text with suggestions, not a rigid master (small, stable list)
+  quantity             Float?
+  rate                 Float?
+  amount               Float?
+  closingStockNote     String           @default("")
+
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([billDate])
+  @@index([item])
+}
+
+// "Fruit & Cash Purchase" and "Onion & Garlic Flakes" — lump-sum-only in
+// the source (no item-level breakdown), kept that way per the user's
+// explicit choice (2026-08-29) to keep entry simple.
+model CashPurchaseEntry {
+  id       Int      @id @default(autoincrement())
+  date     DateTime
+  category String // "Fruit & Cash Purchase" | "Onion & Garlic Flakes"
+  amount   Float
+  remarks  String   @default("")
+
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+}

@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { COMPLIANCE_SUBMODULE_SLUG } from "../app/lib/complianceEntities";
 import { PURCHASE_SUBMODULE_SLUG, PURCHASE_GROUPS, subItemsForGroup } from "../app/lib/purchaseGroups";
+import { VEGETABLE_SUBMODULE_SLUG, VEGETABLE_ITEMS } from "../app/lib/vegetableItems";
 
 const prisma = new PrismaClient();
 
@@ -45,6 +46,25 @@ async function main() {
     });
   }
 
+  await prisma.subModule.upsert({
+    where: { slug: VEGETABLE_SUBMODULE_SLUG },
+    update: {},
+    create: {
+      moduleId: ketanModule.id,
+      name: "Vegetable & Produce Purchase",
+      slug: VEGETABLE_SUBMODULE_SLUG,
+    },
+  });
+
+  for (let i = 0; i < VEGETABLE_ITEMS.length; i++) {
+    const srNo = i + 1;
+    await prisma.vegetableItem.upsert({
+      where: { srNo },
+      update: { name: VEGETABLE_ITEMS[i] },
+      create: { srNo, name: VEGETABLE_ITEMS[i] },
+    });
+  }
+
   const existingAdmin = await prisma.user.findUnique({ where: { username: "admin" } });
   const adminPassword = existingAdmin ? null : randomPassword();
   const admin = await prisma.user.upsert({
@@ -78,8 +98,9 @@ async function main() {
   });
 
   console.log("Seed complete.");
-  console.log("Module:", ketanModule.name, "| SubModules:", COMPLIANCE_SUBMODULE_SLUG, PURCHASE_SUBMODULE_SLUG);
+  console.log("Module:", ketanModule.name, "| SubModules:", COMPLIANCE_SUBMODULE_SLUG, PURCHASE_SUBMODULE_SLUG, VEGETABLE_SUBMODULE_SLUG);
   console.log(`Seeded ${PURCHASE_GROUPS.length} purchase costing groups.`);
+  console.log(`Seeded ${VEGETABLE_ITEMS.length} vegetable/fruit master items.`);
   if (adminPassword) console.log(`New admin login -> username: admin  password: ${adminPassword}`);
   else console.log("admin user already existed, password unchanged");
   if (ketanPassword) console.log(`New ketan login -> username: ketan  password: ${ketanPassword}`);
