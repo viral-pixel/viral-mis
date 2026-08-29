@@ -15,10 +15,11 @@ export async function GET() {
     orderBy: [{ month: "asc" }, { id: "asc" }],
   });
 
-  const headers = ["Month", "Commodity Group", "Amount", "Quantity", "Deduction (Yes/No)", "Remarks"];
+  const headers = ["Month", "Commodity Group", "Item", "Amount", "Quantity", "Deduction (Yes/No)", "Remarks"];
   const rows = entries.map((e) => [
     e.month.toISOString().slice(0, 7),
     e.group.name,
+    e.subItem,
     e.amount ?? "",
     e.quantity ?? "",
     e.isDeduction ? "Yes" : "No",

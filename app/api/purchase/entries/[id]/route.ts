@@ -8,7 +8,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!auth.ok) return auth.response;
   const { id } = await params;
 
-  const { month, groupId, amount, quantity, isDeduction, remarks } = await req.json();
+  const { month, groupId, amount, quantity, isDeduction, remarks, subItem } = await req.json();
   const monthDate = new Date(`${String(month).slice(0, 7)}-01`);
   if (isNaN(monthDate.getTime())) return NextResponse.json({ error: "Invalid month" }, { status: 400 });
 
@@ -20,6 +20,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       amount: amount === "" || amount === null || amount === undefined ? null : Number(amount),
       quantity: quantity === "" || quantity === null || quantity === undefined ? null : Number(quantity),
       isDeduction: !!isDeduction,
+      subItem: subItem ?? "",
       remarks: remarks ?? "",
     },
   });

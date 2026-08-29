@@ -277,9 +277,12 @@ model PartnerInsurance {
 // as ONE group (per user's 2026-08-29 request) even though they're
 // physically different items, because the business wants one combined
 // figure for analysis. Multiple PurchaseEntry rows per group per month are
-// expected and normal (different vendors/brands within the same month) —
-// remarks on each entry is how those get told apart, not a rigid schema
-// field, since the sub-breakdown varies by group.
+// expected and normal (different vendors/brands within the same month).
+// Groups that combine several original commodities (Roti/Paratha/Poori/
+// Thepla, Masala, Gas & Wood, Curd Items) also need each one pulled out
+// individually, not just the combined total — that's what `subItem` on
+// PurchaseEntry is for (see below); `remarks` stays free text for
+// vendor/brand notes, separate from which physical item an entry is.
 model PurchaseGroup {
   id          Int      @id @default(autoincrement())
   name        String   @unique
@@ -287,6 +290,12 @@ model PurchaseGroup {
   hasAmount   Boolean  @default(true)
   hasQuantity Boolean  @default(true)
   sortOrder   Int      @default(0)
+  // Comma-separated list of the physical items this group combines, e.g.
+  // "Roti,Paratha,Poori,Thepla" — blank for groups that don't combine
+  // anything. Data (not hardcoded), same as everything else editable in
+  // this app: Admin can define sub-items for a new group via the Manage
+  // Commodities UI, not just the 4 that shipped with the redesign.
+  subItemsCsv String   @default("")
   createdAt   DateTime @default(now())
 
   entries PurchaseEntry[]
@@ -306,7 +315,14 @@ model PurchaseEntry {
   amount    Float?
   quantity  Float?
   isDeduction Boolean @default(false)
-  remarks     String  @default("") // vendor/brand/sub-item note, e.g. "Roti - Vendor X", "Bottles given to ABC Caterers"
+  // Which physical item this entry is for, when the group combines several
+  // (e.g. "Roti" within the Roti/Paratha/Poori/Thepla group). Blank for
+  // groups that don't combine anything (Oil, Rice, Sugar, ...) — there's
+  // nothing to distinguish. Matched against PurchaseGroupDef.subItems in
+  // app/lib/purchaseGroups.ts, not a separate table, since the list is
+  // small and fixed per group.
+  subItem String @default("")
+  remarks String @default("") // vendor/brand note, e.g. "Vendor X", "Bottles given to ABC Caterers"
 
   enteredBy   String   @default("")
   importBatch String   @default("")
@@ -315,6 +331,7 @@ model PurchaseEntry {
 
   @@index([month])
   @@index([groupId])
+  @@index([subItem])
 }
 
 model RentAgreement {

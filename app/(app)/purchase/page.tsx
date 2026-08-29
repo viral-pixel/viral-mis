@@ -14,6 +14,7 @@ interface PurchaseGroup {
   hasAmount: boolean;
   hasQuantity: boolean;
   sortOrder: number;
+  subItems: string[];
 }
 interface PurchaseEntryRow {
   id: number;
@@ -23,6 +24,7 @@ interface PurchaseEntryRow {
   amount: number | null;
   quantity: number | null;
   isDeduction: boolean;
+  subItem: string;
   remarks: string;
 }
 interface PurchaseStats {
@@ -148,7 +150,9 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
   const [to, setTo] = useState("");
   const [stats, setStats] = useState<PurchaseStats | null>(null);
   const [trendGroupId, setTrendGroupId] = useState<number | null>(null);
+  const [trendSubItem, setTrendSubItem] = useState<string>(""); // "" = whole group combined
   const [trend, setTrend] = useState<{ monthLabel: string; amount: number | null; quantity: number | null; costPerUnit: number | null }[] | null>(null);
+  const [subItemBreakdown, setSubItemBreakdown] = useState<{ subItem: string; totalAmount: number; totalQuantity: number }[] | null>(null);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -168,15 +172,27 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
     }
   }, [groups, trendGroupId]);
 
+  // Selecting a different commodity resets any sub-item drill-down —
+  // "Roti" from the previous commodity has no meaning for the new one.
+  useEffect(() => { setTrendSubItem(""); }, [trendGroupId]);
+
   useEffect(() => {
     if (!trendGroupId) return;
     setTrend(null);
     const p = new URLSearchParams(qs);
     p.set("trendGroupId", String(trendGroupId));
+    if (trendSubItem) p.set("subItem", trendSubItem);
     fetch(`/api/purchase/stats?${p.toString()}`).then((r) => r.json()).then((d) => setTrend(d.trend ?? []));
-  }, [trendGroupId, qs]);
+  }, [trendGroupId, trendSubItem, qs]);
 
   const selectedGroup = groups.find((g) => g.id === trendGroupId);
+
+  useEffect(() => {
+    if (!trendGroupId || !selectedGroup?.subItems.length) { setSubItemBreakdown(null); return; }
+    const p = new URLSearchParams(qs);
+    p.set("subItemBreakdownGroupId", String(trendGroupId));
+    fetch(`/api/purchase/stats?${p.toString()}`).then((r) => r.json()).then((d) => setSubItemBreakdown(d.breakdown ?? []));
+  }, [trendGroupId, selectedGroup?.subItems.length, qs]);
 
   return (
     <div>
@@ -227,16 +243,41 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
             <h3 style={{ margin: "0 0 2px", fontSize: 15, fontWeight: 700, color: C.ink }}>Amount vs. Quantity — by commodity</h3>
             <div style={{ color: C.sub, fontSize: 12.5, marginBottom: 10 }}>
               Pick one commodity to see its cost and volume trends side by side, independent of the filters above.
+              {selectedGroup && selectedGroup.subItems.length > 0 && " This commodity combines several items — narrow to just one below, or leave it on “All combined” for the overall figure."}
             </div>
-            <Field label="Commodity">
-              <Select value={trendGroupId ?? ""} onChange={(e) => setTrendGroupId(Number(e.target.value))} style={{ maxWidth: 320 }}>
-                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </Select>
-            </Field>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <Field label="Commodity">
+                <Select value={trendGroupId ?? ""} onChange={(e) => setTrendGroupId(Number(e.target.value))} style={{ maxWidth: 320 }}>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </Select>
+              </Field>
+              {selectedGroup && selectedGroup.subItems.length > 0 && (
+                <Field label="Specific item">
+                  <Select value={trendSubItem} onChange={(e) => setTrendSubItem(e.target.value)} style={{ maxWidth: 240 }}>
+                    <option value="">All combined</option>
+                    {selectedGroup.subItems.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </Select>
+                </Field>
+              )}
+            </div>
           </div>
 
+          {selectedGroup && selectedGroup.subItems.length > 0 && subItemBreakdown && subItemBreakdown.length > 0 && (
+            <ChartPanel title={`Breakdown within ${selectedGroup.name}`} sub="Total spend per item, in range — click “Specific item” above to see its own trend" style={{ marginBottom: 16 }}>
+              <ResponsiveContainer width="100%" height={Math.max(120, subItemBreakdown.length * 34)}>
+                <BarChart data={subItemBreakdown} layout="vertical" margin={{ left: 8, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
+                  <XAxis type="number" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+                  <YAxis type="category" dataKey="subItem" width={130} tick={{ fontFamily: FONT_BODY, fontSize: 11.5, fill: C.ink }} />
+                  <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                  <Bar dataKey="totalAmount" fill={CHART_COLORS[2]} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <ChartPanel title="Amount Analysis" sub={`${selectedGroup?.name ?? ""} — ₹ spent per month`}>
+            <ChartPanel title="Amount Analysis" sub={`${trendSubItem || selectedGroup?.name || ""} — ₹ spent per month`}>
               {!selectedGroup?.hasAmount ? (
                 <Empty text={`${selectedGroup?.name ?? "This commodity"} doesn't track Amount — only Quantity is recorded for it.`} />
               ) : !trend ? (
@@ -256,7 +297,7 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
               )}
             </ChartPanel>
 
-            <ChartPanel title="Quantity Analysis" sub={`${selectedGroup?.name ?? ""} — volume purchased per month${selectedGroup?.unit ? ` (${selectedGroup.unit})` : ""}`}>
+            <ChartPanel title="Quantity Analysis" sub={`${trendSubItem || selectedGroup?.name || ""} — volume purchased per month${selectedGroup?.unit ? ` (${selectedGroup.unit})` : ""}`}>
               {!selectedGroup?.hasQuantity ? (
                 <Empty text={`${selectedGroup?.name ?? "This commodity"} doesn't track Quantity — only Amount is recorded for it.`} />
               ) : !trend ? (
@@ -277,7 +318,7 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
             </ChartPanel>
           </div>
           {selectedGroup?.hasAmount && selectedGroup?.hasQuantity && trend && trend.some((t) => t.costPerUnit != null) && (
-            <ChartPanel title="Cost per Unit" sub={`${selectedGroup.name} — ₹ per ${selectedGroup.unit || "unit"}, derived from Amount ÷ Quantity`} style={{ marginTop: 16 }}>
+            <ChartPanel title="Cost per Unit" sub={`${trendSubItem || selectedGroup.name} — ₹ per ${selectedGroup.unit || "unit"}, derived from Amount ÷ Quantity`} style={{ marginTop: 16 }}>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={trend} margin={{ left: 0, right: 16 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
@@ -385,6 +426,7 @@ function EntriesTab({ groups, isAdmin }: { groups: PurchaseGroup[]; isAdmin: boo
             <tr>
               <Th>Month</Th>
               <Th>Commodity</Th>
+              <Th>Item</Th>
               <Th>Amount</Th>
               <Th>Quantity</Th>
               <Th>Remarks</Th>
@@ -396,6 +438,7 @@ function EntriesTab({ groups, isAdmin }: { groups: PurchaseGroup[]; isAdmin: boo
               <tr key={e.id}>
                 <Td>{monthLabelFromKey(e.month)}</Td>
                 <Td>{e.group.name}</Td>
+                <Td>{e.subItem || <span style={{ color: C.faint }}>—</span>}</Td>
                 <Td>{e.amount != null ? (e.isDeduction ? "− " : "") + fmtMoney(e.amount) : <span style={{ color: C.faint }}>—</span>}</Td>
                 <Td>{e.quantity != null ? `${e.isDeduction ? "− " : ""}${e.quantity} ${e.group.unit}` : <span style={{ color: C.faint }}>—</span>}</Td>
                 <Td>{e.remarks || <span style={{ color: C.faint }}>—</span>}{e.isDeduction && <span style={{ marginLeft: 6, fontSize: 11, color: C.red, fontWeight: 600 }}>DEDUCTION</span>}</Td>
@@ -428,6 +471,7 @@ function EntryForm({
 }) {
   const [month, setMonth] = useState(initial ? initial.month.slice(0, 7) : "");
   const [groupId, setGroupId] = useState<number | "">(initial?.groupId ?? "");
+  const [subItem, setSubItem] = useState(initial?.subItem ?? "");
   const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
   const [quantity, setQuantity] = useState(initial?.quantity != null ? String(initial.quantity) : "");
   const [remarks, setRemarks] = useState(initial?.remarks ?? "");
@@ -436,10 +480,12 @@ function EntryForm({
   const [error, setError] = useState("");
 
   const selectedGroup = groups.find((g) => g.id === groupId);
+  const needsSubItem = (selectedGroup?.subItems.length ?? 0) > 0;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!month || !groupId) { setError("Month and Commodity are required"); return; }
+    if (needsSubItem && !subItem) { setError("Pick which item this entry is for"); return; }
     setSaving(true);
     setError("");
     const url = initial ? `/api/purchase/entries/${initial.id}` : "/api/purchase/entries";
@@ -447,7 +493,7 @@ function EntryForm({
     const res = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month, groupId, amount, quantity, remarks, isDeduction }),
+      body: JSON.stringify({ month, groupId, subItem: needsSubItem ? subItem : "", amount, quantity, remarks, isDeduction }),
     });
     if (res.ok) onSaved();
     else {
@@ -465,12 +511,20 @@ function EntryForm({
             <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} required />
           </Field>
           <Field label="Commodity">
-            <Select value={groupId} onChange={(e) => setGroupId(Number(e.target.value))} required>
+            <Select value={groupId} onChange={(e) => { setGroupId(Number(e.target.value)); setSubItem(""); }} required>
               <option value="">Select…</option>
               {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </Select>
           </Field>
         </div>
+        {needsSubItem && (
+          <Field label="Which item is this entry for?">
+            <Select value={subItem} onChange={(e) => setSubItem(e.target.value)} required>
+              <option value="">Select…</option>
+              {selectedGroup!.subItems.map((s) => <option key={s} value={s}>{s}</option>)}
+            </Select>
+          </Field>
+        )}
         {selectedGroup && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             {selectedGroup.hasAmount && (
@@ -485,8 +539,8 @@ function EntryForm({
             )}
           </div>
         )}
-        <Field label="Remarks (vendor, brand, sub-item, etc.)">
-          <Textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Vendor XYZ, Roti batch, bottles given to ABC Caterers…" />
+        <Field label="Remarks (vendor, brand, notes)">
+          <Textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Vendor XYZ, bottles given to ABC Caterers…" />
         </Field>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: C.ink }}>
           <input type="checkbox" checked={isDeduction} onChange={(e) => setIsDeduction(e.target.checked)} />
@@ -514,6 +568,7 @@ function ManageGroupsModal({
   const [unit, setUnit] = useState("");
   const [hasAmount, setHasAmount] = useState(true);
   const [hasQuantity, setHasQuantity] = useState(true);
+  const [subItemsText, setSubItemsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -523,13 +578,14 @@ function ManageGroupsModal({
     if (!hasAmount && !hasQuantity) { setError("Track at least Amount or Quantity"); return; }
     setSaving(true);
     setError("");
+    const subItems = subItemsText.split(",").map((s) => s.trim()).filter(Boolean);
     const res = await fetch("/api/purchase/groups", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), unit: unit.trim(), hasAmount, hasQuantity }),
+      body: JSON.stringify({ name: name.trim(), unit: unit.trim(), hasAmount, hasQuantity, subItems }),
     });
     if (res.ok) {
-      setName(""); setUnit(""); setHasAmount(true); setHasQuantity(true); setShowAdd(false);
+      setName(""); setUnit(""); setHasAmount(true); setHasQuantity(true); setSubItemsText(""); setShowAdd(false);
       onChanged();
     } else {
       const d = await res.json().catch(() => ({}));
@@ -548,6 +604,7 @@ function ManageGroupsModal({
                 <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: C.sub, textTransform: "uppercase" }}>Name</th>
                 <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: C.sub, textTransform: "uppercase" }}>Unit</th>
                 <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: C.sub, textTransform: "uppercase" }}>Tracks</th>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: C.sub, textTransform: "uppercase" }}>Combines</th>
               </tr>
             </thead>
             <tbody>
@@ -558,6 +615,7 @@ function ManageGroupsModal({
                   <td style={{ padding: "7px 10px", color: C.sub }}>
                     {[g.hasAmount && "Amount", g.hasQuantity && "Quantity"].filter(Boolean).join(" + ")}
                   </td>
+                  <td style={{ padding: "7px 10px", color: C.sub }}>{g.subItems.length > 0 ? g.subItems.join(", ") : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -573,6 +631,9 @@ function ManageGroupsModal({
             </Field>
             <Field label="Unit (leave blank if amount-only)">
               <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. Kg, Ltrs, Pcs" />
+            </Field>
+            <Field label="Combines several items? List them, comma separated (optional)">
+              <Input value={subItemsText} onChange={(e) => setSubItemsText(e.target.value)} placeholder="e.g. Chapati, Naan — leave blank if this is one single item" />
             </Field>
             <div style={{ display: "flex", gap: 16 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>

@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { COMPLIANCE_SUBMODULE_SLUG } from "../app/lib/complianceEntities";
-import { PURCHASE_SUBMODULE_SLUG, PURCHASE_GROUPS } from "../app/lib/purchaseGroups";
+import { PURCHASE_SUBMODULE_SLUG, PURCHASE_GROUPS, subItemsForGroup } from "../app/lib/purchaseGroups";
 
 const prisma = new PrismaClient();
 
@@ -37,10 +37,11 @@ async function main() {
   });
 
   for (const group of PURCHASE_GROUPS) {
+    const subItemsCsv = subItemsForGroup(group).join(",");
     await prisma.purchaseGroup.upsert({
       where: { name: group.name },
-      update: { unit: group.unit, hasAmount: group.hasAmount, hasQuantity: group.hasQuantity, sortOrder: group.sortOrder },
-      create: { name: group.name, unit: group.unit, hasAmount: group.hasAmount, hasQuantity: group.hasQuantity, sortOrder: group.sortOrder },
+      update: { unit: group.unit, hasAmount: group.hasAmount, hasQuantity: group.hasQuantity, sortOrder: group.sortOrder, subItemsCsv },
+      create: { name: group.name, unit: group.unit, hasAmount: group.hasAmount, hasQuantity: group.hasQuantity, sortOrder: group.sortOrder, subItemsCsv },
     });
   }
 

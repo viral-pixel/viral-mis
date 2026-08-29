@@ -2,6 +2,7 @@ import { prisma } from "@/app/lib/prisma";
 
 export interface StatsFilter {
   groupId?: number;
+  subItem?: string;
   from?: string; // "YYYY-MM"
   to?: string; // "YYYY-MM"
 }
@@ -57,6 +58,7 @@ function signedQuantity(e: { quantity: number | null; isDeduction: boolean }) {
 function buildWhere(filter?: StatsFilter) {
   const where: Record<string, unknown> = {};
   if (filter?.groupId) where.groupId = filter.groupId;
+  if (filter?.subItem) where.subItem = filter.subItem;
   if (filter?.from || filter?.to) {
     where.month = {
       ...(filter.from ? { gte: new Date(`${filter.from}-01`) } : {}),
@@ -135,4 +137,28 @@ export async function collectGroupTrend(groupId: number, filter?: Omit<StatsFilt
       quantity: v.hasQuantity ? Math.round(v.quantity * 100) / 100 : null,
       costPerUnit: v.hasAmount && v.hasQuantity && v.quantity !== 0 ? Math.round((v.amount / v.quantity) * 100) / 100 : null,
     }));
+}
+
+export interface SubItemBreakdown {
+  subItem: string;
+  totalAmount: number;
+  totalQuantity: number;
+}
+
+// Totals per physical item WITHIN a combined group (e.g. Roti vs Paratha
+// vs Poori vs Thepla inside the Roti/Paratha/Poori/Thepla group) — lets the
+// user pull each one out individually even though the group's overall
+// figure is what feeds the top-level analysis.
+export async function collectSubItemBreakdown(groupId: number, filter?: Omit<StatsFilter, "groupId" | "subItem">): Promise<SubItemBreakdown[]> {
+  const entries = await prisma.purchaseEntry.findMany({ where: { ...buildWhere(filter), groupId } });
+
+  const totals = new Map<string, SubItemBreakdown>();
+  for (const e of entries) {
+    const key = e.subItem || "(unspecified)";
+    const existing = totals.get(key) ?? { subItem: key, totalAmount: 0, totalQuantity: 0 };
+    existing.totalAmount += signedAmount(e);
+    existing.totalQuantity += signedQuantity(e);
+    totals.set(key, existing);
+  }
+  return [...totals.values()].sort((a, b) => b.totalAmount - a.totalAmount);
 }

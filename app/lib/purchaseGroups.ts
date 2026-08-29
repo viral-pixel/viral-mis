@@ -17,6 +17,13 @@ export interface PurchaseGroupDef {
   oldItemNames: string[];
 }
 
+// A group has selectable sub-items whenever it combines more than one
+// original commodity — that's exactly what oldItemNames encodes, so reuse
+// it rather than maintaining a second, parallel list.
+export function subItemsForGroup(def: Pick<PurchaseGroupDef, "oldItemNames">): string[] {
+  return def.oldItemNames.length > 1 ? def.oldItemNames : [];
+}
+
 export const PURCHASE_GROUPS: PurchaseGroupDef[] = [
   { name: "Oil", unit: "Tin", hasAmount: true, hasQuantity: true, sortOrder: 1, oldItemNames: ["Oil"] },
   { name: "Rice", unit: "Kg", hasAmount: true, hasQuantity: true, sortOrder: 2, oldItemNames: ["Rice"] },

@@ -13,9 +13,11 @@ export async function GET(req: NextRequest) {
   const groupId = req.nextUrl.searchParams.get("groupId");
   const from = req.nextUrl.searchParams.get("from");
   const to = req.nextUrl.searchParams.get("to");
+  const subItem = req.nextUrl.searchParams.get("subItem");
 
   const where: Record<string, unknown> = {};
   if (groupId) where.groupId = Number(groupId);
+  if (subItem) where.subItem = subItem;
   if (from || to) {
     where.month = {
       ...(from ? { gte: new Date(`${from}-01`) } : {}),
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireModuleAccessBySubModuleSlug(PURCHASE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
-  const { month, groupId, amount, quantity, isDeduction, remarks } = await req.json();
+  const { month, groupId, amount, quantity, isDeduction, remarks, subItem } = await req.json();
   if (!month || !groupId) {
     return NextResponse.json({ error: "month and groupId are required" }, { status: 400 });
   }
@@ -49,6 +51,7 @@ export async function POST(req: NextRequest) {
       amount: amount === "" || amount === null || amount === undefined ? null : Number(amount),
       quantity: quantity === "" || quantity === null || quantity === undefined ? null : Number(quantity),
       isDeduction: !!isDeduction,
+      subItem: subItem ?? "",
       remarks: remarks ?? "",
       enteredBy: auth.session.username ?? "",
     },

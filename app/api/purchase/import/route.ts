@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
   const findKey = (label: string) => sampleKeys.find((k) => norm(k) === norm(label));
   const monthKey = findKey("Month");
   const groupKey = findKey("Commodity Group");
+  const subItemKey = findKey("Item");
   const amountKey = findKey("Amount");
   const quantityKey = findKey("Quantity");
   const deductionKey = findKey("Deduction (Yes/No)");
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
           amount: amountKey ? excelValueToNumber(row[amountKey]) : null,
           quantity: quantityKey ? excelValueToNumber(row[quantityKey]) : null,
           isDeduction: deductionKey ? /^(yes|true|1)$/i.test(String(row[deductionKey] ?? "").trim()) : false,
+          subItem: subItemKey ? String(row[subItemKey] ?? "").trim() : "",
           remarks: remarksKey ? String(row[remarksKey] ?? "").trim() : "",
           enteredBy: auth.session.username ?? "",
           importBatch,
