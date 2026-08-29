@@ -22,6 +22,8 @@ export async function collectComplianceReminders(): Promise<ExpiryReminder[]> {
           id: `${entity.slug}-${row.id}-${ef.key}`,
           moduleName: MODULE_NAME,
           subModuleName: SUBMODULE_NAME,
+          categoryLabel: entity.label,
+          categorySlug: entity.slug,
           recordLabel: `${entity.label}: ${entityRowTitle(entity, row)}`,
           dateLabel: ef.label,
           date,

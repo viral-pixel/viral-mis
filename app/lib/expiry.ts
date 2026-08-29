@@ -46,6 +46,8 @@ export interface ExpiryReminder {
   id: string; // unique across the whole feed, e.g. "vehicle-14-insurance"
   moduleName: string;
   subModuleName: string;
+  categoryLabel: string; // e.g. "PO & Agreement & Service Order" — for grouping/tabs
+  categorySlug: string; // e.g. "agreements"
   recordLabel: string; // e.g. "Lumax Industries Ltd — FSSAI"
   dateLabel: string; // e.g. "Insurance End"
   date: Date;
