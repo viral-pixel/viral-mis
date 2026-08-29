@@ -268,6 +268,15 @@ export interface ItemWiseRow {
   jakirAmount: number;
   rajuAmount: number;
   totalAmount: number;
+  // Flags vs the trailing 3-month average for this item (blended across
+  // vendors) — the user's own request to surface "this vegetable seems too
+  // high in quantity" or "rate is 15-20% above the usual trend" without
+  // having to eyeball every row by hand. null when there's no trailing
+  // baseline yet (item has no purchases in the prior 3 months).
+  rateChangePct: number | null;
+  qtyChangePct: number | null;
+  rateFlag: "high" | "low" | null;
+  qtyFlag: "high" | null;
 }
 
 export interface ItemWiseAnalysis {
@@ -287,14 +296,23 @@ export interface ItemWiseAnalysis {
   avgPerDayAmount: number | null; // veg + fruit combined per calendar day
 }
 
+const RATE_FLAG_THRESHOLD_PCT = 15; // matches the user's own "15-20%" framing
+const QTY_FLAG_THRESHOLD_PCT = 40; // quantity naturally swings more than rate — a higher bar
+const FLAG_MIN_AMOUNT = 1000; // ignore trivial purchases — a ₹100 buy swinging 300% isn't a meaningful signal
+
 export async function collectItemWiseAnalysis(month: string): Promise<ItemWiseAnalysis> {
   const from = new Date(`${month}-01`);
   const to = new Date(from.getFullYear(), from.getMonth() + 1, 0);
+  // Trailing 3 calendar months immediately before the selected one, used as
+  // the "usual trend" baseline for the flags below.
+  const trailingFrom = new Date(from.getFullYear(), from.getMonth() - 3, 1);
+  const trailingTo = new Date(from.getFullYear(), from.getMonth(), 0);
 
-  const [items, entries, cashEntries] = await Promise.all([
+  const [items, entries, cashEntries, trailingEntries] = await Promise.all([
     prisma.vegetableItem.findMany({ orderBy: { srNo: "asc" } }),
     prisma.vegetablePurchaseEntry.findMany({ where: { date: { gte: from, lte: to } }, include: { item: true, vendor: true } }),
     prisma.cashPurchaseEntry.findMany({ where: { date: { gte: from, lte: to }, category: "Fruit & Cash Purchase" } }),
+    prisma.vegetablePurchaseEntry.findMany({ where: { date: { gte: trailingFrom, lte: trailingTo } } }),
   ]);
 
   const byItem = new Map<number, { jakirQty: number; jakirAmt: number; rajuQty: number; rajuAmt: number }>();
@@ -305,6 +323,14 @@ export async function collectItemWiseAnalysis(month: string): Promise<ItemWiseAn
     byItem.set(e.itemId, existing);
   }
 
+  const trailingByItem = new Map<number, { qty: number; amount: number }>();
+  for (const e of trailingEntries) {
+    const existing = trailingByItem.get(e.itemId) ?? { qty: 0, amount: 0 };
+    existing.qty += e.quantity;
+    existing.amount += e.amount;
+    trailingByItem.set(e.itemId, existing);
+  }
+
   let totalJakirQty = 0, totalJakirAmount = 0, totalRajuQty = 0, totalRajuAmount = 0;
   const rows: ItemWiseRow[] = items.map((item) => {
     const t = byItem.get(item.id) ?? { jakirQty: 0, jakirAmt: 0, rajuQty: 0, rajuAmt: 0 };
@@ -312,6 +338,15 @@ export async function collectItemWiseAnalysis(month: string): Promise<ItemWiseAn
     const totalAmount = Math.round(t.jakirAmt + t.rajuAmt);
     totalJakirQty += t.jakirQty; totalJakirAmount += t.jakirAmt;
     totalRajuQty += t.rajuQty; totalRajuAmount += t.rajuAmt;
+
+    const trailing = trailingByItem.get(item.id);
+    const material = totalAmount >= FLAG_MIN_AMOUNT && (trailing?.amount ?? 0) >= FLAG_MIN_AMOUNT;
+    const trailingAvgQty = trailing && trailing.qty > 0 ? trailing.qty / 3 : null;
+    const trailingAvgRate = trailing && trailing.qty > 0 ? trailing.amount / trailing.qty : null;
+    const currentRate = totalQty > 0 ? totalAmount / totalQty : null;
+    const rateChangePct = material && trailingAvgRate && currentRate != null ? Math.round(((currentRate - trailingAvgRate) / trailingAvgRate) * 1000) / 10 : null;
+    const qtyChangePct = material && trailingAvgQty && totalQty > 0 ? Math.round(((totalQty - trailingAvgQty) / trailingAvgQty) * 1000) / 10 : null;
+
     return {
       srNo: item.srNo,
       itemName: item.name,
@@ -323,6 +358,10 @@ export async function collectItemWiseAnalysis(month: string): Promise<ItemWiseAn
       jakirAmount: Math.round(t.jakirAmt),
       rajuAmount: Math.round(t.rajuAmt),
       totalAmount,
+      rateChangePct,
+      qtyChangePct,
+      rateFlag: rateChangePct == null ? null : rateChangePct >= RATE_FLAG_THRESHOLD_PCT ? "high" : rateChangePct <= -RATE_FLAG_THRESHOLD_PCT ? "low" : null,
+      qtyFlag: qtyChangePct != null && qtyChangePct >= QTY_FLAG_THRESHOLD_PCT ? "high" : null,
     };
   });
 

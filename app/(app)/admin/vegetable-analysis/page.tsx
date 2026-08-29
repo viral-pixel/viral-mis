@@ -34,6 +34,8 @@ interface ItemWiseRow {
   jakirRate: number | null; rajuRate: number | null;
   jakirQty: number; rajuQty: number; totalQty: number;
   jakirAmount: number; rajuAmount: number; totalAmount: number;
+  rateChangePct: number | null; qtyChangePct: number | null;
+  rateFlag: "high" | "low" | null; qtyFlag: "high" | null;
 }
 interface ItemWiseAnalysis {
   monthKey: string; monthLabel: string; items: ItemWiseRow[];
@@ -120,13 +122,36 @@ function MonthlySummaryTab() {
   const [editingMonth, setEditingMonth] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const load = () => fetch("/api/admin/vegetable-analysis/summary").then((r) => r.json()).then(setRows);
   useEffect(() => { load(); }, []);
 
-  const displayRows = useMemo(() => (rows ? [...rows].filter((r) => r.grandTotal > 0).reverse() : null), [rows]);
-  const latest = displayRows && displayRows.length > 0 ? displayRows[0] : null;
-  const chartRows = useMemo(() => (rows ? [...rows].filter((r) => r.grandTotal > 0) : []), [rows]);
+  const withData = useMemo(() => (rows ? rows.filter((r) => r.grandTotal > 0) : null), [rows]);
+  const displayRows = useMemo(() => {
+    if (!withData) return null;
+    const filtered = withData.filter((r) => (!from || r.monthKey >= from) && (!to || r.monthKey <= to));
+    return [...filtered].reverse();
+  }, [withData, from, to]);
+  const latest = withData && withData.length > 0 ? withData[withData.length - 1] : null;
+  const chartRows = withData ?? [];
+
+  const rangeTotal = useMemo(() => {
+    if (!displayRows || displayRows.length === 0 || (!from && !to)) return null;
+    const sum = (f: (r: MonthlyRow) => number | null) => {
+      let total = 0, allKnown = true;
+      for (const r of displayRows) { const v = f(r); if (v == null) { allKnown = false; break; } total += v; }
+      return allKnown ? total : null;
+    };
+    return {
+      months: displayRows.length,
+      pureVegQty: sum((r) => r.pureVegQty), potatoQty: sum((r) => r.potatoQty), onionQty: sum((r) => r.onionQty),
+      pureVegAmount: sum((r) => r.pureVegAmount), potatoAmount: sum((r) => r.potatoAmount), onionAmount: sum((r) => r.onionAmount),
+      grandTotal: sum((r) => r.grandTotal),
+    };
+  }, [displayRows, from, to]);
 
   const saveCount = async (monthKey: string) => {
     const n = Number(editValue);
@@ -190,7 +215,49 @@ function MonthlySummaryTab() {
         )}
       </ChartPanel>
 
-      <ChartPanel title="Monthly Summary" sub="Count L/D is the only figure you enter — everything else comes from Ketan's data automatically">
+      <ChartPanel
+        title="Monthly Summary" sub="Count L/D is the only figure you enter — everything else comes from Ketan's data automatically"
+        action={
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <Field label="From"><Input type="month" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 140 }} /></Field>
+            <Field label="To"><Input type="month" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 140 }} /></Field>
+            <a href="/api/admin/vegetable-analysis/export-summary" style={{ textDecoration: "none" }}>
+              <Btn variant="ghost">Export Excel</Btn>
+            </a>
+            <label style={{ display: "inline-flex" }}>
+              <Btn variant="ghost" disabled={importing} onClick={() => document.getElementById("meal-count-import-input")?.click()}>
+                {importing ? "Importing…" : "Import Count L/D"}
+              </Btn>
+              <input
+                id="meal-count-import-input" type="file" accept=".xlsx,.xls" style={{ display: "none" }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setImporting(true);
+                  const fd = new FormData();
+                  fd.append("file", file);
+                  const res = await fetch("/api/admin/vegetable-analysis/meal-count/import", { method: "POST", body: fd });
+                  const d = await res.json().catch(() => ({}));
+                  setImporting(false);
+                  e.target.value = "";
+                  if (res.ok) { alert(`Updated ${d.updated} month(s).${d.errors?.length ? ` ${d.errors.length} error(s): ${d.errors.join("; ")}` : ""}`); load(); }
+                  else alert(d.error || "Import failed");
+                }}
+              />
+            </label>
+          </div>
+        }
+      >
+        {rangeTotal && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 14, padding: 12, background: C.tealSoft, borderRadius: 8, fontSize: 13 }}>
+            <div style={{ fontWeight: 700, color: C.tealDark }}>Range total ({rangeTotal.months} month{rangeTotal.months !== 1 ? "s" : ""}):</div>
+            <div>Veg Qty: <strong style={{ color: C.ink }}>{fmtQty(rangeTotal.pureVegQty)}</strong></div>
+            <div>Potato Qty: <strong style={{ color: C.ink }}>{fmtQty(rangeTotal.potatoQty)}</strong></div>
+            <div>Onion Qty: <strong style={{ color: C.ink }}>{fmtQty(rangeTotal.onionQty)}</strong></div>
+            <div>Veg ₹: <strong style={{ color: C.ink }}>{rangeTotal.pureVegAmount != null ? fmtMoney(rangeTotal.pureVegAmount) : "—"}</strong></div>
+            <div>Grand Total: <strong style={{ color: C.teal }}>{rangeTotal.grandTotal != null ? fmtMoney(rangeTotal.grandTotal) : "—"}</strong></div>
+          </div>
+        )}
         {displayRows === null ? <Empty text="Loading…" /> : displayRows.length === 0 ? <Empty text="No months with data yet." /> : (
           <div style={{ overflowX: "auto" }}>
             <Table>
@@ -273,6 +340,8 @@ function ItemWiseTab() {
     return onlyPurchased ? data.items.filter((i) => i.totalQty > 0) : data.items;
   }, [data, onlyPurchased]);
 
+  const flagged = useMemo(() => (data ? data.items.filter((i) => i.rateFlag || i.qtyFlag) : []), [data]);
+
   return (
     <ChartPanel
       title="Item-wise Vendor Comparison"
@@ -288,24 +357,46 @@ function ItemWiseTab() {
             <input type="checkbox" checked={onlyPurchased} onChange={(e) => setOnlyPurchased(e.target.checked)} />
             Only items purchased this month
           </label>
+          {month && (
+            <a href={`/api/admin/vegetable-analysis/export-item-wise?month=${month}`} style={{ textDecoration: "none" }}>
+              <Btn variant="ghost">Export Excel</Btn>
+            </a>
+          )}
         </div>
       }
     >
       {!month ? <Empty text="No months with data yet." /> : !data ? <Empty text="Loading…" /> : (
         <>
+          {flagged.length > 0 && (
+            <div style={{ background: C.amberSoft, border: `1px solid ${C.amber}`, borderRadius: 8, padding: 12, marginBottom: 14, fontSize: 13 }}>
+              <div style={{ fontWeight: 700, color: C.ink, marginBottom: 4 }}>
+                {flagged.length} item{flagged.length !== 1 ? "s" : ""} off the usual trend vs the prior 3 months
+              </div>
+              <div style={{ color: C.ink }}>
+                {flagged.map((i, idx) => (
+                  <span key={i.srNo}>
+                    {idx > 0 && " · "}
+                    <strong>{i.itemName}</strong>
+                    {i.rateFlag && <span style={{ color: i.rateFlag === "high" ? C.red : C.green }}> rate {i.rateFlag === "high" ? "▲" : "▼"}{Math.abs(i.rateChangePct!)}%</span>}
+                    {i.qtyFlag && <span style={{ color: C.amber }}> qty ▲{Math.abs(i.qtyChangePct!)}%</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ overflowX: "auto", maxHeight: "60vh", overflowY: "auto" }}>
             <Table>
               <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
                 <tr>
                   <Th>#</Th><Th>Item</Th><Th>Jakir Rate</Th><Th>Raju Rate</Th><Th>Jakir Qty</Th><Th>Raju Qty</Th><Th>Total Qty</Th>
-                  <Th>Jakir ₹</Th><Th>Raju ₹</Th><Th>Total ₹</Th>
+                  <Th>Jakir ₹</Th><Th>Raju ₹</Th><Th>Total ₹</Th><Th>Trend</Th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
-                  <tr><td colSpan={10} style={{ padding: 20 }}><Empty text={data.totalVegQty === 0 ? "No item-level purchase data recorded for this month." : "No items match this filter."} /></td></tr>
+                  <tr><td colSpan={11} style={{ padding: 20 }}><Empty text={data.totalVegQty === 0 ? "No item-level purchase data recorded for this month." : "No items match this filter."} /></td></tr>
                 ) : rows.map((i) => (
-                  <tr key={i.srNo}>
+                  <tr key={i.srNo} style={{ background: i.rateFlag || i.qtyFlag ? C.amberSoft : "transparent" }}>
                     <Td>{i.srNo}</Td>
                     <Td>{i.itemName}</Td>
                     <Td>{fmtRate(i.jakirRate)}</Td>
@@ -316,6 +407,11 @@ function ItemWiseTab() {
                     <Td>{i.jakirAmount ? fmtMoney(i.jakirAmount) : "—"}</Td>
                     <Td>{i.rajuAmount ? fmtMoney(i.rajuAmount) : "—"}</Td>
                     <Td><strong style={{ color: C.ink }}>{i.totalAmount ? fmtMoney(i.totalAmount) : "—"}</strong></Td>
+                    <Td>
+                      {i.rateFlag && <span style={{ color: i.rateFlag === "high" ? C.red : C.green, fontWeight: 600, fontSize: 12 }}>rate {i.rateFlag === "high" ? "▲" : "▼"}{Math.abs(i.rateChangePct!)}% </span>}
+                      {i.qtyFlag && <span style={{ color: C.amber, fontWeight: 600, fontSize: 12 }}>qty ▲{Math.abs(i.qtyChangePct!)}%</span>}
+                      {!i.rateFlag && !i.qtyFlag && <span style={{ color: C.faint }}>—</span>}
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -348,7 +444,14 @@ function PotatoOnionTab() {
   const displayRows = useMemo(() => (rows ? [...rows].filter((r) => r.grandTotal > 0).reverse() : null), [rows]);
 
   return (
-    <ChartPanel title="Potato &amp; Onion Summary" sub="Potato here is potato-only (Baby Potato excluded) — matches your original Pot-Oni-Veg Summ sheet, kept separate from the combined figure in Monthly Summary">
+    <ChartPanel
+      title="Potato &amp; Onion Summary" sub="Potato here is potato-only (Baby Potato excluded) — matches your original Pot-Oni-Veg Summ sheet, kept separate from the combined figure in Monthly Summary"
+      action={
+        <a href="/api/admin/vegetable-analysis/export-potato-onion" style={{ textDecoration: "none" }}>
+          <Btn variant="ghost">Export Excel</Btn>
+        </a>
+      }
+    >
       {displayRows === null ? <Empty text="Loading…" /> : displayRows.length === 0 ? <Empty text="No data yet." /> : (
         <div style={{ overflowX: "auto" }}>
           <Table>
