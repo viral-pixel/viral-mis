@@ -22,6 +22,11 @@ interface OverviewRow {
 }
 interface VendorCompRow { itemId: number; itemName: string; srNo: number; vendorId: number; vendorName: string; totalQty: number; totalAmount: number; avgRate: number }
 interface ItemTrendRow { date: string; vendorName: string; quantity: number; rate: number; amount: number }
+interface AmbeDraftLine { particulars: string; quantity: number; rate: number; amount: number; itemId: number | null; itemName: string | null }
+interface AmbeDraft {
+  date: string | null; invoiceNo: string | null; vendorId: number | null; vendorName: string;
+  printedTotal: number | null; sumOfLines: number; totalMismatch: boolean; lines: AmbeDraftLine[]; unmatchedCount: number;
+}
 
 const CASH_CATEGORIES = ["Fruit & Cash Purchase", "Onion & Garlic Flakes"];
 
@@ -353,6 +358,8 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
   const [editing, setEditing] = useState<PurchaseRow | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showBatchForm, setShowBatchForm] = useState(false);
+  const [importedDraft, setImportedDraft] = useState<AmbeDraft | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -390,8 +397,29 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
         </>
       } />
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-        <Btn onClick={() => setShowBatchForm(true)}><Plus size={15} /> Add Day&apos;s Purchase</Btn>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}>
+        <label style={{ display: "inline-flex" }}>
+          <Btn variant="ghost" disabled={importing} onClick={() => document.getElementById("ambe-bill-input")?.click()}>
+            <Upload size={15} /> {importing ? "Reading bill…" : "Import Ambe Bill (PDF)"}
+          </Btn>
+          <input
+            id="ambe-bill-input" type="file" accept="application/pdf" style={{ display: "none" }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setImporting(true);
+              const fd = new FormData();
+              fd.append("file", file);
+              const res = await fetch("/api/vegetable/purchases/import-ambe-bill", { method: "POST", body: fd });
+              const d = await res.json().catch(() => ({}));
+              setImporting(false);
+              e.target.value = "";
+              if (res.ok) { setImportedDraft(d); setShowBatchForm(true); }
+              else alert(d.error || "Could not read this bill");
+            }}
+          />
+        </label>
+        <Btn onClick={() => { setImportedDraft(null); setShowBatchForm(true); }}><Plus size={15} /> Add Day&apos;s Purchase</Btn>
       </div>
 
       {rows === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="No purchases for this filter yet." /> : (
@@ -414,7 +442,12 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
       )}
 
       {showBatchForm && (
-        <BatchPurchaseForm items={items} vendors={vendors} onClose={() => setShowBatchForm(false)} onSaved={() => { setShowBatchForm(false); load(); }} onVendorAdded={onVendorAdded} />
+        <BatchPurchaseForm
+          items={items} vendors={vendors} initialDraft={importedDraft}
+          onClose={() => setShowBatchForm(false)}
+          onSaved={() => { setShowBatchForm(false); setImportedDraft(null); load(); }}
+          onVendorAdded={onVendorAdded}
+        />
       )}
       {showForm && (
         <PurchaseForm items={items} vendors={vendors} initial={editing} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); load(); }} onVendorAdded={onVendorAdded} />
@@ -429,12 +462,12 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
 // date+vendor preloads whatever was already saved (highlighted rows) so
 // entries can be extended or corrected without creating duplicates.
 function BatchPurchaseForm({
-  items, vendors, onClose, onSaved, onVendorAdded,
+  items, vendors, initialDraft, onClose, onSaved, onVendorAdded,
 }: {
-  items: VegItem[]; vendors: Vendor[]; onClose: () => void; onSaved: () => void; onVendorAdded: () => void;
+  items: VegItem[]; vendors: Vendor[]; initialDraft?: AmbeDraft | null; onClose: () => void; onSaved: () => void; onVendorAdded: () => void;
 }) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [vendorId, setVendorId] = useState<number | "">("");
+  const [date, setDate] = useState(() => initialDraft?.date ?? new Date().toISOString().slice(0, 10));
+  const [vendorId, setVendorId] = useState<number | "">(initialDraft?.vendorId ?? "");
   const [newVendor, setNewVendor] = useState("");
   const [search, setSearch] = useState("");
   const [newItemName, setNewItemName] = useState("");
@@ -470,9 +503,20 @@ function BatchPurchaseForm({
       .then((rows: PurchaseRow[]) => {
         const map: Record<number, { entryId: number | null; quantity: string; rate: string }> = {};
         for (const r of rows) map[r.itemId] = { entryId: r.id, quantity: String(r.quantity), rate: String(r.rate) };
+        // Already-saved entries win (never silently overwritten by a
+        // re-imported bill); the draft only fills in items with no existing
+        // entry yet for this date+vendor.
+        if (initialDraft) {
+          for (const line of initialDraft.lines) {
+            if (line.itemId != null && !map[line.itemId]) {
+              map[line.itemId] = { entryId: null, quantity: String(line.quantity), rate: String(line.rate) };
+            }
+          }
+        }
         setLines(map);
         setLoadingExisting(false);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, vendorId]);
 
   const setLine = (itemId: number, patch: Partial<{ quantity: string; rate: string }>) => {
@@ -519,9 +563,27 @@ function BatchPurchaseForm({
     onSaved();
   };
 
+  const unmatchedLines = initialDraft?.lines.filter((l) => l.itemId == null) ?? [];
+
   return (
-    <Modal title="Add Day's Purchase" onClose={onClose} width={720}>
+    <Modal title={initialDraft ? "Review Imported Bill" : "Add Day's Purchase"} onClose={onClose} width={720}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {initialDraft && (
+          <div style={{ background: "#F0FBF6", border: `1px solid ${C.green}`, borderRadius: 8, padding: 12, fontSize: 12.5, color: C.ink }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              Imported from {initialDraft.vendorName}{initialDraft.invoiceNo ? ` invoice ${initialDraft.invoiceNo}` : ""} — nothing is saved yet, review below then click Save All.
+            </div>
+            <div style={{ color: C.sub }}>
+              Bill total: {fmtMoney(initialDraft.printedTotal ?? 0)} · Read from bill: {fmtMoney(initialDraft.sumOfLines)}
+              {initialDraft.totalMismatch && <span style={{ color: C.red, fontWeight: 600 }}> — totals don&apos;t match, please double-check every line</span>}
+            </div>
+            {unmatchedLines.length > 0 && (
+              <div style={{ color: C.red, marginTop: 6 }}>
+                {unmatchedLines.length} item(s) on the bill could not be matched to a known item and were NOT pre-filled — add them manually below: {unmatchedLines.map((l) => `"${l.particulars}" (${l.quantity} @ ₹${l.rate})`).join(", ")}
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
           <Field label="Vendor">
