@@ -22,10 +22,10 @@ interface OverviewRow {
 }
 interface VendorCompRow { itemId: number; itemName: string; srNo: number; vendorId: number; vendorName: string; totalQty: number; totalAmount: number; avgRate: number }
 interface ItemTrendRow { date: string; vendorName: string; quantity: number; rate: number; amount: number }
-interface AmbeDraftLine { particulars: string; quantity: number; rate: number; amount: number; itemId: number | null; itemName: string | null }
-interface AmbeDraft {
+interface BillDraftLine { particulars: string; quantity: number; rate: number; amount: number; itemId: number | null; itemName: string | null }
+interface BillDraft {
   date: string | null; invoiceNo: string | null; vendorId: number | null; vendorName: string;
-  printedTotal: number | null; sumOfLines: number; totalMismatch: boolean; lines: AmbeDraftLine[]; unmatchedCount: number;
+  printedTotal: number | null; sumOfLines: number; totalMismatch: boolean; lines: BillDraftLine[]; unmatchedCount: number;
 }
 
 const CASH_CATEGORIES = ["Fruit & Cash Purchase", "Onion & Garlic Flakes"];
@@ -358,7 +358,8 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
   const [editing, setEditing] = useState<PurchaseRow | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showBatchForm, setShowBatchForm] = useState(false);
-  const [importedDraft, setImportedDraft] = useState<AmbeDraft | null>(null);
+  const [importedDraft, setImportedDraft] = useState<BillDraft | null>(null);
+  const [presetVendorId, setPresetVendorId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
 
   const qs = useMemo(() => {
@@ -419,7 +420,28 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
             }}
           />
         </label>
-        <Btn onClick={() => { setImportedDraft(null); setShowBatchForm(true); }}><Plus size={15} /> Add Day&apos;s Purchase</Btn>
+        <label style={{ display: "inline-flex" }}>
+          <Btn variant="ghost" onClick={() => document.getElementById("milan-bill-input")?.click()}>
+            <Upload size={15} /> Import Milan Veg Bill
+          </Btn>
+          {/* Milan Vegetable Co. (Jakir) bills are handwritten — there's no
+              working parser for them, so this doesn't read the file at all.
+              It's a shortcut that jumps straight into the manual entry grid
+              with the vendor pre-selected, so picking a photo/scan here just
+              opens the form for Ketan to enter numbers by hand. */}
+          <input
+            id="milan-bill-input" type="file" accept="application/pdf,image/*" style={{ display: "none" }}
+            onChange={(e) => {
+              if (!e.target.files?.[0]) return;
+              e.target.value = "";
+              setImportedDraft(null);
+              const jakir = vendors.find((v) => v.name.toLowerCase() === "jakir");
+              setPresetVendorId(jakir?.id ?? null);
+              setShowBatchForm(true);
+            }}
+          />
+        </label>
+        <Btn onClick={() => { setImportedDraft(null); setPresetVendorId(null); setShowBatchForm(true); }}><Plus size={15} /> Add Day&apos;s Purchase</Btn>
       </div>
 
       {rows === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="No purchases for this filter yet." /> : (
@@ -443,9 +465,9 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
 
       {showBatchForm && (
         <BatchPurchaseForm
-          items={items} vendors={vendors} initialDraft={importedDraft}
+          items={items} vendors={vendors} initialDraft={importedDraft} presetVendorId={presetVendorId}
           onClose={() => setShowBatchForm(false)}
-          onSaved={() => { setShowBatchForm(false); setImportedDraft(null); load(); }}
+          onSaved={() => { setShowBatchForm(false); setImportedDraft(null); setPresetVendorId(null); load(); }}
           onVendorAdded={onVendorAdded}
         />
       )}
@@ -462,12 +484,13 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
 // date+vendor preloads whatever was already saved (highlighted rows) so
 // entries can be extended or corrected without creating duplicates.
 function BatchPurchaseForm({
-  items, vendors, initialDraft, onClose, onSaved, onVendorAdded,
+  items, vendors, initialDraft, presetVendorId, onClose, onSaved, onVendorAdded,
 }: {
-  items: VegItem[]; vendors: Vendor[]; initialDraft?: AmbeDraft | null; onClose: () => void; onSaved: () => void; onVendorAdded: () => void;
+  items: VegItem[]; vendors: Vendor[]; initialDraft?: BillDraft | null; presetVendorId?: number | null;
+  onClose: () => void; onSaved: () => void; onVendorAdded: () => void;
 }) {
   const [date, setDate] = useState(() => initialDraft?.date ?? new Date().toISOString().slice(0, 10));
-  const [vendorId, setVendorId] = useState<number | "">(initialDraft?.vendorId ?? "");
+  const [vendorId, setVendorId] = useState<number | "">(initialDraft?.vendorId ?? presetVendorId ?? "");
   const [newVendor, setNewVendor] = useState("");
   const [search, setSearch] = useState("");
   const [newItemName, setNewItemName] = useState("");
