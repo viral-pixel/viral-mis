@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Download, Upload } from "lucide-react";
+import { Plus, Download, Upload, Settings2 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Modal, ConfirmDelete } from "@/app/components/ui";
 import { C, FONT_BODY, CHART_COLORS } from "@/app/lib/constants";
@@ -47,9 +47,12 @@ export default function PurchasePage() {
   const [tab, setTab] = useState<"analysis" | "entries">("analysis");
   const [items, setItems] = useState<PurchaseItem[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [showManageItems, setShowManageItems] = useState(false);
+
+  const loadItems = () => fetch("/api/purchase/items").then((r) => r.json()).then(setItems);
 
   useEffect(() => {
-    fetch("/api/purchase/items").then((r) => r.json()).then(setItems);
+    loadItems();
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setIsAdmin(!!d.user?.isAdmin));
   }, []);
 
@@ -63,9 +66,18 @@ export default function PurchasePage() {
             <a href="/api/purchase/export" style={{ textDecoration: "none" }}>
               <Btn variant="ghost"><Download size={15} /> Export Excel</Btn>
             </a>
+            {isAdmin && (
+              <Btn variant="ghost" onClick={() => setShowManageItems(true)}>
+                <Settings2 size={15} /> Manage Commodities
+              </Btn>
+            )}
           </div>
         }
       />
+
+      {showManageItems && (
+        <ManageItemsModal items={items} onClose={() => setShowManageItems(false)} onChanged={loadItems} />
+      )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
         {(["analysis", "entries"] as const).map((t) => (
@@ -412,6 +424,105 @@ function MonthForm({
           <Btn type="submit" disabled={saving || loading}>{saving ? "Saving…" : "Save"}</Btn>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+// Admin-only: lets Ketan's list of tracked commodities grow over time
+// without a code change — e.g. a new item NCS starts buying that wasn't
+// in the original Excel's 26 columns. New items immediately show up in
+// the Monthly Entries grid and the Item Trend dropdown, since both read
+// this list dynamically.
+function ManageItemsModal({
+  items,
+  onClose,
+  onChanged,
+}: {
+  items: PurchaseItem[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [name, setName] = useState("");
+  const [unit, setUnit] = useState("");
+  const [hasAmount, setHasAmount] = useState(true);
+  const [hasQuantity, setHasQuantity] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) { setError("Name is required"); return; }
+    if (!hasAmount && !hasQuantity) { setError("Track at least Amount or Quantity"); return; }
+    setSaving(true);
+    setError("");
+    const res = await fetch("/api/purchase/items", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), unit: unit.trim(), hasAmount, hasQuantity }),
+    });
+    if (res.ok) {
+      setName(""); setUnit(""); setHasAmount(true); setHasQuantity(true); setShowAdd(false);
+      onChanged();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "Could not save");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <Modal title="Manage Commodities" onClose={onClose} width={560}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ maxHeight: "40vh", overflowY: "auto", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: C.bg }}>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: C.sub, textTransform: "uppercase" }}>Name</th>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: C.sub, textTransform: "uppercase" }}>Unit</th>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: C.sub, textTransform: "uppercase" }}>Tracks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={{ padding: "7px 10px" }}>{it.name}</td>
+                  <td style={{ padding: "7px 10px", color: C.sub }}>{it.unit || "—"}</td>
+                  <td style={{ padding: "7px 10px", color: C.sub }}>
+                    {[it.hasAmount && "Amount", it.hasQuantity && "Quantity"].filter(Boolean).join(" + ")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {!showAdd ? (
+          <Btn variant="ghost" onClick={() => setShowAdd(true)}><Plus size={15} /> Add Commodity</Btn>
+        ) : (
+          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14 }}>
+            <Field label="Name">
+              <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Paneer" />
+            </Field>
+            <Field label="Unit (leave blank if amount-only)">
+              <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. Kg, Ltrs, Pcs" />
+            </Field>
+            <div style={{ display: "flex", gap: 16 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                <input type="checkbox" checked={hasAmount} onChange={(e) => setHasAmount(e.target.checked)} /> Track Amount (₹)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                <input type="checkbox" checked={hasQuantity} onChange={(e) => setHasQuantity(e.target.checked)} /> Track Quantity
+              </label>
+            </div>
+            {error && <div style={{ color: C.red, fontSize: 13 }}>{error}</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Btn variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Btn>
+              <Btn type="submit" disabled={saving}>{saving ? "Saving…" : "Add"}</Btn>
+            </div>
+          </form>
+        )}
+      </div>
     </Modal>
   );
 }
