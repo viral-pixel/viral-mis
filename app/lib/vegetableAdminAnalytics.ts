@@ -37,9 +37,9 @@ export interface AdminVegMonthRow {
   onionPct: number | null;
   flakesPct: number | null;
   nonVegPct: number | null;
-  pureVegQty: number;
-  potatoQty: number;
-  onionQty: number;
+  pureVegQty: number | null; // null = not tracked that month, distinct from a genuine zero
+  potatoQty: number | null;
+  onionQty: number | null;
   countLD: number | null;
   perPlatePureVeg: number | null; // grams per plate
   perPlatePotato: number | null;
@@ -141,9 +141,9 @@ export async function collectAdminVegSummary(): Promise<AdminVegMonthRow[]> {
       grandTotal: Math.round(grandTotal * 100) / 100,
       potatoPct, onionPct, flakesPct,
       nonVegPct: potatoPct != null && onionPct != null && flakesPct != null ? Math.round((potatoPct + onionPct + flakesPct) * 10) / 10 : null,
-      pureVegQty: m.pureVegQty != null ? Math.round(m.pureVegQty * 100) / 100 : 0,
-      potatoQty: m.potatoQty != null ? Math.round(m.potatoQty * 100) / 100 : 0,
-      onionQty: m.onionQty != null ? Math.round(m.onionQty * 100) / 100 : 0,
+      pureVegQty: m.pureVegQty != null ? Math.round(m.pureVegQty * 100) / 100 : null,
+      potatoQty: m.potatoQty != null ? Math.round(m.potatoQty * 100) / 100 : null,
+      onionQty: m.onionQty != null ? Math.round(m.onionQty * 100) / 100 : null,
       countLD,
       perPlatePureVeg: gramsPerPlate(m.pureVegQty),
       perPlatePotato,
@@ -151,4 +151,201 @@ export async function collectAdminVegSummary(): Promise<AdminVegMonthRow[]> {
       perPlatePotatoOnion: perPlatePotato != null && perPlateOnion != null ? Math.round((perPlatePotato + perPlateOnion) * 100) / 100 : null,
     };
   });
+}
+
+// ---------------------------------------------------------------------
+// "Pot-Oni-Veg Summ" replica — Potato here is POTATO-ONLY (Baby Potato
+// excluded), a deliberately different figure from collectAdminVegSummary's
+// combined Potato+Baby-Potato number above. Each of Viral's original sheets
+// kept its own Potato definition; this preserves that instead of forcing
+// the two reports to agree.
+// ---------------------------------------------------------------------
+
+export interface PotatoOnionSummaryRow {
+  monthKey: string;
+  monthLabel: string;
+  potatoQty: number; // potato-only
+  potatoAmount: number; // potato-only
+  potatoAvgRate: number | null;
+  onionQty: number | null;
+  onionAmount: number;
+  onionAvgRate: number | null;
+  totalPOQty: number;
+  totalPOAmount: number;
+  grandTotal: number; // same "Total Veg Exp" as the monthly summary
+  potatoPctOfVeg: number | null;
+  onionPctOfVeg: number | null;
+  totalPctOfVeg: number | null;
+  monthlyDays: number;
+  totalVegQty: number | null; // pure veg qty, reused
+  avgPDQtyPureVeg: number | null; // per calendar day, NOT per plate
+  avgPDQtyPotato: number | null;
+  avgPDQtyOnion: number | null;
+  countLD: number | null;
+  perPlatePureVeg: number | null;
+  perPlatePotato: number | null;
+  perPlateOnion: number | null;
+  perPlateTotalVeg: number | null;
+}
+
+function daysInMonth(monthKey: string): number {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+export async function collectPotatoOnionSummary(): Promise<PotatoOnionSummaryRow[]> {
+  const [baseRows, potatoOnlyEntries] = await Promise.all([
+    collectAdminVegSummary(),
+    prisma.potatoOnionEntry.findMany({ where: { item: "Potato" } }),
+  ]);
+
+  const livePotatoOnly = new Map<string, { qty: number; amount: number }>();
+  for (const e of potatoOnlyEntries) {
+    if (!e.billDate) continue;
+    const key = monthKeyOf(e.billDate);
+    if (key <= HISTORICAL_CUTOFF_MONTH) continue; // historical months use the frozen snapshot instead
+    const existing = livePotatoOnly.get(key) ?? { qty: 0, amount: 0 };
+    if (e.quantity != null) existing.qty += e.quantity;
+    existing.amount += e.amount ?? 0;
+    livePotatoOnly.set(key, existing);
+  }
+  const historicalPotatoOnly = new Map(VEGETABLE_HISTORICAL_SNAPSHOT.map((s) => [s.monthKey, { qty: s.potatoOnlyQty, amount: s.potatoOnlyAmount }]));
+
+  return baseRows.map((r) => {
+    const potatoOnly = historicalPotatoOnly.get(r.monthKey) ?? livePotatoOnly.get(r.monthKey) ?? { qty: 0, amount: 0 };
+    const days = daysInMonth(r.monthKey);
+    const onionQty = r.onionQty ?? 0;
+    const potatoPctOfVeg = r.grandTotal ? Math.round((potatoOnly.amount / r.grandTotal) * 1000) / 10 : null;
+    const onionPctOfVeg = r.onionPct; // onion is identical between both sheets
+    const perDay = (qty: number | null) => (qty ? Math.round((qty / days) * 100) / 100 : null);
+    const gramsPerPlate = (qty: number | null) => (r.countLD && qty != null ? Math.round(((qty * 1000) / r.countLD) * 100) / 100 : null);
+    return {
+      monthKey: r.monthKey,
+      monthLabel: r.monthLabel,
+      potatoQty: Math.round(potatoOnly.qty * 100) / 100,
+      potatoAmount: Math.round(potatoOnly.amount * 100) / 100,
+      potatoAvgRate: potatoOnly.qty ? Math.round((potatoOnly.amount / potatoOnly.qty) * 100) / 100 : null,
+      onionQty: r.onionQty,
+      onionAmount: r.onionAmount,
+      onionAvgRate: onionQty ? Math.round((r.onionAmount / onionQty) * 100) / 100 : null,
+      totalPOQty: Math.round((potatoOnly.qty + onionQty) * 100) / 100,
+      totalPOAmount: Math.round((potatoOnly.amount + r.onionAmount) * 100) / 100,
+      grandTotal: r.grandTotal,
+      potatoPctOfVeg, onionPctOfVeg,
+      totalPctOfVeg: potatoPctOfVeg != null && onionPctOfVeg != null ? Math.round((potatoPctOfVeg + onionPctOfVeg) * 10) / 10 : null,
+      monthlyDays: days,
+      totalVegQty: r.pureVegQty,
+      avgPDQtyPureVeg: perDay(r.pureVegQty),
+      avgPDQtyPotato: perDay(potatoOnly.qty),
+      avgPDQtyOnion: perDay(r.onionQty),
+      countLD: r.countLD,
+      perPlatePureVeg: r.perPlatePureVeg,
+      perPlatePotato: gramsPerPlate(potatoOnly.qty),
+      perPlateOnion: r.perPlateOnion,
+      perPlateTotalVeg: r.pureVegQty != null ? gramsPerPlate(r.pureVegQty + potatoOnly.qty + onionQty) : null,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------
+// "Veg Analysis" replica — one row per item, Jakir vs Raju side by side,
+// for one month. Always computed live from Ketan's day-level entries
+// (never frozen), since the database's item-level detail is real and
+// complete from August 2025 onward — more granular than anything Viral
+// reconciled by hand, so there's no reason to freeze it. July 2025 is the
+// one month with no item-level data at all (same root gap as everywhere
+// else in this dashboard), and will show correctly as all-zero rows.
+// ---------------------------------------------------------------------
+
+export interface ItemWiseRow {
+  srNo: number;
+  itemName: string;
+  jakirRate: number | null;
+  rajuRate: number | null;
+  jakirQty: number;
+  rajuQty: number;
+  totalQty: number;
+  jakirAmount: number;
+  rajuAmount: number;
+  totalAmount: number;
+}
+
+export interface ItemWiseAnalysis {
+  monthKey: string;
+  monthLabel: string;
+  items: ItemWiseRow[];
+  totalJakirQty: number;
+  totalJakirAmount: number;
+  totalRajuQty: number;
+  totalRajuAmount: number;
+  totalVegQty: number;
+  totalVegAmount: number;
+  fruitCashAmount: number;
+  grandTotalWithFruit: number;
+  monthlyDays: number;
+  avgPerDayQty: number | null; // veg qty only per calendar day (no fruit quantity exists to include)
+  avgPerDayAmount: number | null; // veg + fruit combined per calendar day
+}
+
+export async function collectItemWiseAnalysis(month: string): Promise<ItemWiseAnalysis> {
+  const from = new Date(`${month}-01`);
+  const to = new Date(from.getFullYear(), from.getMonth() + 1, 0);
+
+  const [items, entries, cashEntries] = await Promise.all([
+    prisma.vegetableItem.findMany({ orderBy: { srNo: "asc" } }),
+    prisma.vegetablePurchaseEntry.findMany({ where: { date: { gte: from, lte: to } }, include: { item: true, vendor: true } }),
+    prisma.cashPurchaseEntry.findMany({ where: { date: { gte: from, lte: to }, category: "Fruit & Cash Purchase" } }),
+  ]);
+
+  const byItem = new Map<number, { jakirQty: number; jakirAmt: number; rajuQty: number; rajuAmt: number }>();
+  for (const e of entries) {
+    const existing = byItem.get(e.itemId) ?? { jakirQty: 0, jakirAmt: 0, rajuQty: 0, rajuAmt: 0 };
+    if (e.vendor.name === "Jakir") { existing.jakirQty += e.quantity; existing.jakirAmt += e.amount; }
+    else if (e.vendor.name === "Raju") { existing.rajuQty += e.quantity; existing.rajuAmt += e.amount; }
+    byItem.set(e.itemId, existing);
+  }
+
+  let totalJakirQty = 0, totalJakirAmount = 0, totalRajuQty = 0, totalRajuAmount = 0;
+  const rows: ItemWiseRow[] = items.map((item) => {
+    const t = byItem.get(item.id) ?? { jakirQty: 0, jakirAmt: 0, rajuQty: 0, rajuAmt: 0 };
+    const totalQty = Math.round((t.jakirQty + t.rajuQty) * 100) / 100;
+    const totalAmount = Math.round(t.jakirAmt + t.rajuAmt);
+    totalJakirQty += t.jakirQty; totalJakirAmount += t.jakirAmt;
+    totalRajuQty += t.rajuQty; totalRajuAmount += t.rajuAmt;
+    return {
+      srNo: item.srNo,
+      itemName: item.name,
+      jakirRate: t.jakirQty ? Math.round((t.jakirAmt / t.jakirQty) * 100) / 100 : null,
+      rajuRate: t.rajuQty ? Math.round((t.rajuAmt / t.rajuQty) * 100) / 100 : null,
+      jakirQty: Math.round(t.jakirQty * 100) / 100,
+      rajuQty: Math.round(t.rajuQty * 100) / 100,
+      totalQty,
+      jakirAmount: Math.round(t.jakirAmt),
+      rajuAmount: Math.round(t.rajuAmt),
+      totalAmount,
+    };
+  });
+
+  const fruitCashAmount = Math.round(cashEntries.reduce((s, e) => s + e.amount, 0));
+  const totalVegQty = Math.round((totalJakirQty + totalRajuQty) * 100) / 100;
+  const totalVegAmount = Math.round(totalJakirAmount + totalRajuAmount);
+  const grandTotalWithFruit = totalVegAmount + fruitCashAmount;
+  const days = daysInMonth(month);
+
+  return {
+    monthKey: month,
+    monthLabel: monthLabelOf(month),
+    items: rows,
+    totalJakirQty: Math.round(totalJakirQty * 100) / 100,
+    totalJakirAmount: Math.round(totalJakirAmount),
+    totalRajuQty: Math.round(totalRajuQty * 100) / 100,
+    totalRajuAmount: Math.round(totalRajuAmount),
+    totalVegQty,
+    totalVegAmount,
+    fruitCashAmount,
+    grandTotalWithFruit,
+    monthlyDays: days,
+    avgPerDayQty: totalVegQty ? Math.round(totalVegQty / days) : null,
+    avgPerDayAmount: grandTotalWithFruit ? Math.round(grandTotalWithFruit / days) : null,
+  };
 }
