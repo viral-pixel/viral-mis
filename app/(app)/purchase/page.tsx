@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Download, Upload, Settings2 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Modal, ConfirmDelete } from "@/app/components/ui";
+import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Textarea, Modal, ConfirmDelete } from "@/app/components/ui";
 import { C, FONT_BODY, CHART_COLORS } from "@/app/lib/constants";
 import { IndianRupee, Boxes, CalendarClock } from "lucide-react";
 
-interface PurchaseItem {
+interface PurchaseGroup {
   id: number;
   name: string;
   unit: string;
@@ -15,16 +15,15 @@ interface PurchaseItem {
   hasQuantity: boolean;
   sortOrder: number;
 }
-interface MonthSummary {
-  month: string;
-  totalAmount: number;
-  itemCount: number;
-}
-interface MonthEntry {
+interface PurchaseEntryRow {
   id: number;
-  itemCategoryId: number;
+  month: string;
+  groupId: number;
+  group: PurchaseGroup;
   amount: number | null;
   quantity: number | null;
+  isDeduction: boolean;
+  remarks: string;
 }
 interface PurchaseStats {
   totalMonths: number;
@@ -32,7 +31,7 @@ interface PurchaseStats {
   latestMonthLabel: string | null;
   latestMonthSpend: number | null;
   monthlyCostTrend: { monthLabel: string; monthKey: string; totalAmount: number }[];
-  costByItem: { itemId: number; name: string; unit: string; totalAmount: number; totalQuantity: number }[];
+  costByGroup: { groupId: number; name: string; unit: string; totalAmount: number; totalQuantity: number }[];
 }
 
 function fmtMoney(n: number) {
@@ -40,19 +39,19 @@ function fmtMoney(n: number) {
 }
 function monthLabelFromKey(key: string) {
   const d = new Date(key);
-  return d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+  return d.toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 export default function PurchasePage() {
   const [tab, setTab] = useState<"analysis" | "entries">("analysis");
-  const [items, setItems] = useState<PurchaseItem[]>([]);
+  const [groups, setGroups] = useState<PurchaseGroup[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [showManageItems, setShowManageItems] = useState(false);
+  const [showManageGroups, setShowManageGroups] = useState(false);
 
-  const loadItems = () => fetch("/api/purchase/items").then((r) => r.json()).then(setItems);
+  const loadGroups = () => fetch("/api/purchase/groups").then((r) => r.json()).then(setGroups);
 
   useEffect(() => {
-    loadItems();
+    loadGroups();
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setIsAdmin(!!d.user?.isAdmin));
   }, []);
 
@@ -67,7 +66,7 @@ export default function PurchasePage() {
               <Btn variant="ghost"><Download size={15} /> Export Excel</Btn>
             </a>
             {isAdmin && (
-              <Btn variant="ghost" onClick={() => setShowManageItems(true)}>
+              <Btn variant="ghost" onClick={() => setShowManageGroups(true)}>
                 <Settings2 size={15} /> Manage Commodities
               </Btn>
             )}
@@ -75,8 +74,8 @@ export default function PurchasePage() {
         }
       />
 
-      {showManageItems && (
-        <ManageItemsModal items={items} onClose={() => setShowManageItems(false)} onChanged={loadItems} />
+      {showManageGroups && (
+        <ManageGroupsModal groups={groups} onClose={() => setShowManageGroups(false)} onChanged={loadGroups} />
       )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
@@ -93,120 +92,192 @@ export default function PurchasePage() {
               background: tab === t ? C.teal : "#fff",
               color: tab === t ? "#fff" : C.ink,
               border: `1px solid ${tab === t ? C.teal : C.border}`,
-              textTransform: "capitalize",
             }}
           >
-            {t === "analysis" ? "Costing Analysis" : "Monthly Entries"}
+            {t === "analysis" ? "Costing Analysis" : "Entries"}
           </button>
         ))}
       </div>
 
-      {tab === "analysis" ? <AnalysisTab items={items} /> : <EntriesTab items={items} isAdmin={isAdmin} />}
+      {tab === "analysis" ? <AnalysisTab groups={groups} /> : <EntriesTab groups={groups} isAdmin={isAdmin} />}
     </div>
   );
 }
 
-function AnalysisTab({ items }: { items: PurchaseItem[] }) {
+function FilterBar({
+  from, to, groupId, groups, onChange, groupLabel = "Commodity",
+}: {
+  from: string; to: string; groupId: string;
+  groups: PurchaseGroup[];
+  onChange: (v: { from?: string; to?: string; groupId?: string }) => void;
+  groupLabel?: string;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: 12 }}>
+      <Field label="From month">
+        <Input type="month" value={from} onChange={(e) => onChange({ from: e.target.value })} />
+      </Field>
+      <Field label="To month">
+        <Input type="month" value={to} onChange={(e) => onChange({ to: e.target.value })} />
+      </Field>
+      <Field label={groupLabel}>
+        <Select value={groupId} onChange={(e) => onChange({ groupId: e.target.value })} style={{ minWidth: 200 }}>
+          <option value="">All commodities</option>
+          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </Select>
+      </Field>
+      {(from || to || groupId) && (
+        <Btn variant="ghost" onClick={() => onChange({ from: "", to: "", groupId: "" })}>Clear filters</Btn>
+      )}
+    </div>
+  );
+}
+
+function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [groupId, setGroupId] = useState("");
   const [stats, setStats] = useState<PurchaseStats | null>(null);
-  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+  const [trendGroupId, setTrendGroupId] = useState<number | null>(null);
   const [trend, setTrend] = useState<{ monthLabel: string; amount: number | null; quantity: number | null; costPerUnit: number | null }[] | null>(null);
 
-  useEffect(() => {
-    fetch("/api/purchase/stats").then((r) => r.json()).then(setStats);
-  }, []);
+  const qs = useMemo(() => {
+    const p = new URLSearchParams();
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    if (groupId) p.set("groupId", groupId);
+    return p.toString();
+  }, [from, to, groupId]);
 
   useEffect(() => {
-    if (!selectedItemId) return;
-    setTrend(null);
-    fetch(`/api/purchase/stats?itemId=${selectedItemId}`).then((r) => r.json()).then((d) => setTrend(d.trend ?? []));
-  }, [selectedItemId]);
+    setStats(null);
+    fetch(`/api/purchase/stats?${qs}`).then((r) => r.json()).then(setStats);
+  }, [qs]);
 
   useEffect(() => {
-    if (stats && stats.costByItem.length > 0 && selectedItemId === null) {
-      setSelectedItemId(stats.costByItem[0].itemId);
+    if (stats && stats.costByGroup.length > 0 && trendGroupId === null) {
+      setTrendGroupId(stats.costByGroup[0].groupId);
     }
-  }, [stats, selectedItemId]);
+  }, [stats, trendGroupId]);
 
-  if (!stats) return <Empty text="Loading…" />;
-  if (stats.totalMonths === 0) {
-    return <Empty text="No purchase data yet — add your first month under Monthly Entries." />;
-  }
+  useEffect(() => {
+    if (!trendGroupId) return;
+    setTrend(null);
+    const p = new URLSearchParams(qs);
+    p.set("trendGroupId", String(trendGroupId));
+    fetch(`/api/purchase/stats?${p.toString()}`).then((r) => r.json()).then((d) => setTrend(d.trend ?? []));
+  }, [trendGroupId, qs]);
 
-  const selectedItem = items.find((i) => i.id === selectedItemId);
+  const selectedGroup = groups.find((g) => g.id === trendGroupId);
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 22 }}>
-        <StatCard icon={CalendarClock} label="Months Tracked" value={stats.totalMonths} tint={C.teal} />
-        <StatCard icon={IndianRupee} label="Total Spend (all time)" value={fmtMoney(stats.totalSpend)} tint={C.amber} />
-        <StatCard icon={Boxes} label={`Latest Month${stats.latestMonthLabel ? " — " + stats.latestMonthLabel : ""}`} value={stats.latestMonthSpend != null ? fmtMoney(stats.latestMonthSpend) : "—"} tint={C.green} />
-      </div>
+      <FilterBar from={from} to={to} groupId={groupId} groups={groups} onChange={(v) => {
+        if (v.from !== undefined) setFrom(v.from);
+        if (v.to !== undefined) setTo(v.to);
+        if (v.groupId !== undefined) setGroupId(v.groupId);
+      }} groupLabel="Commodity (for breakdown / stat cards)" />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16, marginBottom: 22, alignItems: "stretch" }}>
-        <ChartPanel title="Monthly Spend Trend" sub="Total cost across all commodities, by month">
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={stats.monthlyCostTrend} margin={{ left: 0, right: 16 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
-              <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
-              <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
-              <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
-              <Bar dataKey="totalAmount" fill={C.teal} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartPanel>
+      {!stats ? (
+        <Empty text="Loading…" />
+      ) : stats.totalMonths === 0 ? (
+        <Empty text="No purchase data for this filter — add entries under the Entries tab." />
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 22 }}>
+            <StatCard icon={CalendarClock} label="Months in Range" value={stats.totalMonths} tint={C.teal} />
+            <StatCard icon={IndianRupee} label="Total Spend" value={fmtMoney(stats.totalSpend)} tint={C.amber} />
+            <StatCard icon={Boxes} label={`Latest Month${stats.latestMonthLabel ? " — " + stats.latestMonthLabel : ""}`} value={stats.latestMonthSpend != null ? fmtMoney(stats.latestMonthSpend) : "—"} tint={C.green} />
+          </div>
 
-        <ChartPanel title="Cost by Commodity" sub="Total spend across all months, top items">
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={stats.costByItem.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 16 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
-              <XAxis type="number" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
-              <YAxis type="category" dataKey="name" width={110} tick={{ fontFamily: FONT_BODY, fontSize: 11.5, fill: C.ink }} />
-              <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
-              <Bar dataKey="totalAmount" fill={C.amber} radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartPanel>
-      </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16, marginBottom: 22, alignItems: "stretch" }}>
+            <ChartPanel title="Monthly Spend Trend (Amount)" sub="Total ₹ across commodities, by month — net of any deductions">
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={stats.monthlyCostTrend} margin={{ left: 0, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                  <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                  <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+                  <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                  <Bar dataKey="totalAmount" fill={C.teal} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartPanel>
 
-      <ChartPanel
-        title="Item Trend — Cost, Volume & Cost-per-Unit"
-        sub="Pick a commodity to see how its price and purchase volume have moved over time"
-        action={
-          <Select value={selectedItemId ?? ""} onChange={(e) => setSelectedItemId(Number(e.target.value))} style={{ width: 220 }}>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>{i.name}</option>
-            ))}
-          </Select>
-        }
-      >
-        {!trend ? (
-          <Empty text="Loading…" />
-        ) : trend.length === 0 ? (
-          <Empty text="No data yet for this item." />
-        ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={trend} margin={{ left: 0, right: 16 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
-              <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
-              <YAxis yAxisId="left" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
-              <Tooltip contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
-              {selectedItem?.hasAmount && <Line yAxisId="left" type="monotone" dataKey="amount" name="Amount (₹)" stroke={CHART_COLORS[0]} strokeWidth={2} dot={{ r: 3 }} />}
-              {selectedItem?.hasQuantity && <Line yAxisId="right" type="monotone" dataKey="quantity" name={`Quantity (${selectedItem?.unit})`} stroke={CHART_COLORS[1]} strokeWidth={2} dot={{ r: 3 }} />}
-              {selectedItem?.hasAmount && selectedItem?.hasQuantity && (
-                <Line yAxisId="right" type="monotone" dataKey="costPerUnit" name={`Cost per ${selectedItem?.unit}`} stroke={CHART_COLORS[3]} strokeWidth={2} strokeDasharray="4 3" dot={{ r: 3 }} />
-              )}
-            </LineChart>
-          </ResponsiveContainer>
-        )}
-      </ChartPanel>
+            <ChartPanel title="Cost by Commodity" sub="Total spend in range, top commodities">
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={stats.costByGroup.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
+                  <XAxis type="number" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+                  <YAxis type="category" dataKey="name" width={140} tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.ink }} />
+                  <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                  <Bar dataKey="totalAmount" fill={C.amber} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <Field label="Commodity for detailed trend below">
+              <Select value={trendGroupId ?? ""} onChange={(e) => setTrendGroupId(Number(e.target.value))} style={{ maxWidth: 320 }}>
+                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </Select>
+            </Field>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: selectedGroup?.hasAmount && selectedGroup?.hasQuantity ? "1fr 1fr" : "1fr", gap: 16 }}>
+            {selectedGroup?.hasAmount && (
+              <ChartPanel title="Amount Analysis" sub={`${selectedGroup.name} — ₹ spent per month`}>
+                {!trend ? <Empty text="Loading…" /> : trend.length === 0 ? <Empty text="No data yet." /> : (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <LineChart data={trend} margin={{ left: 0, right: 16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                      <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                      <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                      <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                      <Line type="monotone" dataKey="amount" name="Amount (₹)" stroke={CHART_COLORS[0]} strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </ChartPanel>
+            )}
+            {selectedGroup?.hasQuantity && (
+              <ChartPanel title="Quantity Analysis" sub={`${selectedGroup.name} — volume purchased per month (${selectedGroup.unit || "units"})`}>
+                {!trend ? <Empty text="Loading…" /> : trend.length === 0 ? <Empty text="No data yet." /> : (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <LineChart data={trend} margin={{ left: 0, right: 16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                      <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                      <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                      <Tooltip contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                      <Line type="monotone" dataKey="quantity" name={`Quantity (${selectedGroup.unit || "units"})`} stroke={CHART_COLORS[1]} strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </ChartPanel>
+            )}
+          </div>
+          {selectedGroup?.hasAmount && selectedGroup?.hasQuantity && trend && trend.some((t) => t.costPerUnit != null) && (
+            <ChartPanel title="Cost per Unit" sub={`${selectedGroup.name} — ₹ per ${selectedGroup.unit || "unit"}, derived from Amount ÷ Quantity`} style={{ marginTop: 16 }}>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={trend} margin={{ left: 0, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                  <XAxis dataKey="monthLabel" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                  <YAxis tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} />
+                  <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                  <Line type="monotone" dataKey="costPerUnit" name={`₹ / ${selectedGroup.unit || "unit"}`} stroke={CHART_COLORS[3]} strokeWidth={2} strokeDasharray="4 3" dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-function ChartPanel({ title, sub, action, children }: { title: string; sub?: string; action?: React.ReactNode; children: React.ReactNode }) {
+function ChartPanel({ title, sub, action, children, style }: { title: string; sub?: string; action?: React.ReactNode; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: 16 }}>
+    <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, ...style }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{title}</div>
@@ -219,22 +290,39 @@ function ChartPanel({ title, sub, action, children }: { title: string; sub?: str
   );
 }
 
-function EntriesTab({ items, isAdmin }: { items: PurchaseItem[]; isAdmin: boolean }) {
-  const [months, setMonths] = useState<MonthSummary[] | null>(null);
-  const [editingMonth, setEditingMonth] = useState<string | null>(null);
+function EntriesTab({ groups, isAdmin }: { groups: PurchaseGroup[]; isAdmin: boolean }) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [entries, setEntries] = useState<PurchaseEntryRow[] | null>(null);
+  const [editing, setEditing] = useState<PurchaseEntryRow | null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  const load = () => fetch("/api/purchase/months").then((r) => r.json()).then(setMonths);
-  useEffect(() => { load(); }, []);
+  const qs = useMemo(() => {
+    const p = new URLSearchParams();
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    if (groupId) p.set("groupId", groupId);
+    return p.toString();
+  }, [from, to, groupId]);
 
-  const del = async (month: string) => {
-    const res = await fetch(`/api/purchase/months/${month}`, { method: "DELETE" });
+  const load = () => fetch(`/api/purchase/entries?${qs}`).then((r) => r.json()).then(setEntries);
+  useEffect(() => { load(); }, [qs]);
+
+  const del = async (id: number) => {
+    const res = await fetch(`/api/purchase/entries/${id}`, { method: "DELETE" });
     if (res.ok) load();
     else alert("Could not delete");
   };
 
   return (
     <div>
+      <FilterBar from={from} to={to} groupId={groupId} groups={groups} onChange={(v) => {
+        if (v.from !== undefined) setFrom(v.from);
+        if (v.to !== undefined) setTo(v.to);
+        if (v.groupId !== undefined) setGroupId(v.groupId);
+      }} />
+
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}>
         <label style={{ display: "inline-flex" }}>
           <Btn variant="ghost" onClick={() => document.getElementById("purchase-import-input")?.click()}>
@@ -253,7 +341,7 @@ function EntriesTab({ items, isAdmin }: { items: PurchaseItem[]; isAdmin: boolea
               const res = await fetch("/api/purchase/import", { method: "POST", body: formData });
               const d = await res.json().catch(() => ({}));
               if (res.ok) {
-                alert(`Imported ${d.monthsImported} month(s).`);
+                alert(`Imported ${d.created} entr${d.created === 1 ? "y" : "ies"}.${d.errors?.length ? ` ${d.errors.length} error(s).` : ""}`);
                 load();
               } else {
                 alert(d.error || "Import failed");
@@ -262,40 +350,39 @@ function EntriesTab({ items, isAdmin }: { items: PurchaseItem[]; isAdmin: boolea
             }}
           />
         </label>
-        <Btn onClick={() => { setEditingMonth(null); setShowForm(true); }}>
-          <Plus size={15} /> Add Month
+        <Btn onClick={() => { setEditing(null); setShowForm(true); }}>
+          <Plus size={15} /> Add Entry
         </Btn>
       </div>
 
-      {months === null ? (
+      {entries === null ? (
         <Empty text="Loading…" />
-      ) : months.length === 0 ? (
-        <Empty text="No months entered yet." />
+      ) : entries.length === 0 ? (
+        <Empty text="No entries for this filter yet." />
       ) : (
         <Table>
           <thead>
             <tr>
               <Th>Month</Th>
-              <Th>Items Entered</Th>
-              <Th>Total Amount</Th>
+              <Th>Commodity</Th>
+              <Th>Amount</Th>
+              <Th>Quantity</Th>
+              <Th>Remarks</Th>
               <Th />
             </tr>
           </thead>
           <tbody>
-            {months.map((m) => (
-              <tr key={m.month}>
-                <Td>{monthLabelFromKey(m.month)}</Td>
-                <Td>{m.itemCount} / {items.length}</Td>
-                <Td>{fmtMoney(m.totalAmount)}</Td>
+            {entries.map((e) => (
+              <tr key={e.id}>
+                <Td>{monthLabelFromKey(e.month)}</Td>
+                <Td>{e.group.name}</Td>
+                <Td>{e.amount != null ? (e.isDeduction ? "− " : "") + fmtMoney(e.amount) : <span style={{ color: C.faint }}>—</span>}</Td>
+                <Td>{e.quantity != null ? `${e.isDeduction ? "− " : ""}${e.quantity} ${e.group.unit}` : <span style={{ color: C.faint }}>—</span>}</Td>
+                <Td>{e.remarks || <span style={{ color: C.faint }}>—</span>}{e.isDeduction && <span style={{ marginLeft: 6, fontSize: 11, color: C.red, fontWeight: 600 }}>DEDUCTION</span>}</Td>
                 <Td>
-                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                    <button
-                      onClick={() => { setEditingMonth(m.month); setShowForm(true); }}
-                      style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}
-                    >
-                      Edit
-                    </button>
-                    {isAdmin && <ConfirmDelete onConfirm={() => del(m.month)} />}
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <button onClick={() => { setEditing(e); setShowForm(true); }} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Edit</button>
+                    {isAdmin && <ConfirmDelete onConfirm={() => del(e.id)} />}
                   </div>
                 </Td>
               </tr>
@@ -305,69 +392,42 @@ function EntriesTab({ items, isAdmin }: { items: PurchaseItem[]; isAdmin: boolea
       )}
 
       {showForm && (
-        <MonthForm
-          items={items}
-          initialMonth={editingMonth}
-          onClose={() => setShowForm(false)}
-          onSaved={() => { setShowForm(false); load(); }}
-        />
+        <EntryForm groups={groups} initial={editing} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); load(); }} />
       )}
     </div>
   );
 }
 
-function MonthForm({
-  items,
-  initialMonth,
-  onClose,
-  onSaved,
+function EntryForm({
+  groups, initial, onClose, onSaved,
 }: {
-  items: PurchaseItem[];
-  initialMonth: string | null;
+  groups: PurchaseGroup[];
+  initial: PurchaseEntryRow | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [month, setMonth] = useState(initialMonth ? initialMonth.slice(0, 7) : "");
-  const [values, setValues] = useState<Record<number, { amount: string; quantity: string }>>({});
-  const [loading, setLoading] = useState(!!initialMonth);
+  const [month, setMonth] = useState(initial ? initial.month.slice(0, 7) : "");
+  const [groupId, setGroupId] = useState<number | "">(initial?.groupId ?? "");
+  const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
+  const [quantity, setQuantity] = useState(initial?.quantity != null ? String(initial.quantity) : "");
+  const [remarks, setRemarks] = useState(initial?.remarks ?? "");
+  const [isDeduction, setIsDeduction] = useState(initial?.isDeduction ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!initialMonth) return;
-    fetch(`/api/purchase/months/${initialMonth}`)
-      .then((r) => r.json())
-      .then((entries: MonthEntry[]) => {
-        const v: Record<number, { amount: string; quantity: string }> = {};
-        for (const e of entries) {
-          v[e.itemCategoryId] = { amount: e.amount != null ? String(e.amount) : "", quantity: e.quantity != null ? String(e.quantity) : "" };
-        }
-        setValues(v);
-        setLoading(false);
-      });
-  }, [initialMonth]);
-
-  const setField = (itemId: number, field: "amount" | "quantity", val: string) => {
-    setValues((v) => ({ ...v, [itemId]: { ...(v[itemId] ?? { amount: "", quantity: "" }), [field]: val } }));
-  };
+  const selectedGroup = groups.find((g) => g.id === groupId);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!month) { setError("Month is required"); return; }
+    if (!month || !groupId) { setError("Month and Commodity are required"); return; }
     setSaving(true);
     setError("");
-    const entries = items.map((item) => {
-      const v = values[item.id] ?? { amount: "", quantity: "" };
-      return {
-        itemCategoryId: item.id,
-        amount: v.amount === "" ? null : Number(v.amount),
-        quantity: v.quantity === "" ? null : Number(v.quantity),
-      };
-    });
-    const res = await fetch("/api/purchase/months", {
-      method: "POST",
+    const url = initial ? `/api/purchase/entries/${initial.id}` : "/api/purchase/entries";
+    const method = initial ? "PUT" : "POST";
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month: `${month}-01`, entries }),
+      body: JSON.stringify({ month, groupId, amount, quantity, remarks, isDeduction }),
     });
     if (res.ok) onSaved();
     else {
@@ -378,67 +438,54 @@ function MonthForm({
   };
 
   return (
-    <Modal title={initialMonth ? `Edit ${monthLabelFromKey(initialMonth)}` : "Add Month"} onClose={onClose} width={860}>
-      <form onSubmit={submit}>
-        <div style={{ marginBottom: 16, maxWidth: 220 }}>
+    <Modal title={initial ? "Edit Entry" : "Add Entry"} onClose={onClose} width={520}>
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <Field label="Month">
-            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} disabled={!!initialMonth} required />
+            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} required />
+          </Field>
+          <Field label="Commodity">
+            <Select value={groupId} onChange={(e) => setGroupId(Number(e.target.value))} required>
+              <option value="">Select…</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </Select>
           </Field>
         </div>
-
-        {loading ? (
-          <Empty text="Loading…" />
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 20px", maxHeight: "50vh", overflowY: "auto", paddingRight: 6 }}>
-            {items.map((item) => (
-              <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ flex: "0 0 150px", fontSize: 13, fontWeight: 600, color: C.ink }}>{item.name}</div>
-                {item.hasAmount && (
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="Amount ₹"
-                    value={values[item.id]?.amount ?? ""}
-                    onChange={(e) => setField(item.id, "amount", e.target.value)}
-                    style={{ width: 100, fontSize: 12.5, padding: "5px 7px", borderRadius: 5, border: `1px solid ${C.border}` }}
-                  />
-                )}
-                {item.hasQuantity && (
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder={`Qty ${item.unit}`}
-                    value={values[item.id]?.quantity ?? ""}
-                    onChange={(e) => setField(item.id, "quantity", e.target.value)}
-                    style={{ width: 100, fontSize: 12.5, padding: "5px 7px", borderRadius: 5, border: `1px solid ${C.border}` }}
-                  />
-                )}
-              </div>
-            ))}
+        {selectedGroup && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {selectedGroup.hasAmount && (
+              <Field label="Amount (₹)">
+                <Input type="number" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              </Field>
+            )}
+            {selectedGroup.hasQuantity && (
+              <Field label={`Quantity ${selectedGroup.unit ? `(${selectedGroup.unit})` : ""}`}>
+                <Input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+              </Field>
+            )}
           </div>
         )}
-
-        {error && <div style={{ color: C.red, fontSize: 13, marginTop: 10 }}>{error}</div>}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <Field label="Remarks (vendor, brand, sub-item, etc.)">
+          <Textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Vendor XYZ, Roti batch, bottles given to ABC Caterers…" />
+        </Field>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: C.ink }}>
+          <input type="checkbox" checked={isDeduction} onChange={(e) => setIsDeduction(e.target.checked)} />
+          This is a deduction (subtract from the monthly total — e.g. gas bottles given to a vendor)
+        </label>
+        {error && <div style={{ color: C.red, fontSize: 13 }}>{error}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn type="submit" disabled={saving || loading}>{saving ? "Saving…" : "Save"}</Btn>
+          <Btn type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
         </div>
       </form>
     </Modal>
   );
 }
 
-// Admin-only: lets Ketan's list of tracked commodities grow over time
-// without a code change — e.g. a new item NCS starts buying that wasn't
-// in the original Excel's 26 columns. New items immediately show up in
-// the Monthly Entries grid and the Item Trend dropdown, since both read
-// this list dynamically.
-function ManageItemsModal({
-  items,
-  onClose,
-  onChanged,
+function ManageGroupsModal({
+  groups, onClose, onChanged,
 }: {
-  items: PurchaseItem[];
+  groups: PurchaseGroup[];
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -456,7 +503,7 @@ function ManageItemsModal({
     if (!hasAmount && !hasQuantity) { setError("Track at least Amount or Quantity"); return; }
     setSaving(true);
     setError("");
-    const res = await fetch("/api/purchase/items", {
+    const res = await fetch("/api/purchase/groups", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: name.trim(), unit: unit.trim(), hasAmount, hasQuantity }),
@@ -484,12 +531,12 @@ function ManageItemsModal({
               </tr>
             </thead>
             <tbody>
-              {items.map((it) => (
-                <tr key={it.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                  <td style={{ padding: "7px 10px" }}>{it.name}</td>
-                  <td style={{ padding: "7px 10px", color: C.sub }}>{it.unit || "—"}</td>
+              {groups.map((g) => (
+                <tr key={g.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={{ padding: "7px 10px" }}>{g.name}</td>
+                  <td style={{ padding: "7px 10px", color: C.sub }}>{g.unit || "—"}</td>
                   <td style={{ padding: "7px 10px", color: C.sub }}>
-                    {[it.hasAmount && "Amount", it.hasQuantity && "Quantity"].filter(Boolean).join(" + ")}
+                    {[g.hasAmount && "Amount", g.hasQuantity && "Quantity"].filter(Boolean).join(" + ")}
                   </td>
                 </tr>
               ))}

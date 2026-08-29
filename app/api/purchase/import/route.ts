@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
-import { PURCHASE_SUBMODULE_SLUG, PURCHASE_ITEMS } from "@/app/lib/purchaseItems";
+import { PURCHASE_SUBMODULE_SLUG } from "@/app/lib/purchaseGroups";
 import { parseUploadedSheet, excelValueToDate, excelValueToNumber } from "@/app/lib/excelIO";
-import { upsertMonthEntries } from "@/app/lib/purchaseUpsert";
 
 function norm(s: string) {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
+  return s.trim().toLowerCase();
 }
 
-// Accepts EITHER this app's own export (headers like "Oil Amount",
-// "Oil (Tin)") OR the user's original real-world Purchase Report Excel
-// (headers like "Oil Bill Amount", "Oil Tin Purchase") — both are
-// registered as candidate header texts per item below, so re-uploading a
-// file exported from here, or the source workbook itself, both work.
+// Accepts this module's own export format (Month, Commodity Group,
+// Amount, Quantity, Deduction, Remarks) — one row per transaction, matched
+// to an existing group by name.
 export async function POST(req: NextRequest) {
   const auth = await requireModuleAccessBySubModuleSlug(PURCHASE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
@@ -25,46 +22,56 @@ export async function POST(req: NextRequest) {
   const sheetRows = await parseUploadedSheet(file);
   if (sheetRows.length === 0) return NextResponse.json({ error: "No rows found in file" }, { status: 400 });
 
-  const items = await prisma.purchaseItemCategory.findMany({ orderBy: { sortOrder: "asc" } });
-  const itemDefByName = new Map(PURCHASE_ITEMS.map((d) => [d.name, d]));
+  const groups = await prisma.purchaseGroup.findMany();
+  const groupByName = new Map(groups.map((g) => [norm(g.name), g]));
 
   const sampleKeys = Object.keys(sheetRows[0]);
-  const findKey = (candidates: (string | undefined)[]) => {
-    const normCandidates = candidates.filter(Boolean).map((c) => norm(c as string));
-    return sampleKeys.find((k) => normCandidates.includes(norm(k)));
-  };
+  const findKey = (label: string) => sampleKeys.find((k) => norm(k) === norm(label));
+  const monthKey = findKey("Month");
+  const groupKey = findKey("Commodity Group");
+  const amountKey = findKey("Amount");
+  const quantityKey = findKey("Quantity");
+  const deductionKey = findKey("Deduction (Yes/No)");
+  const remarksKey = findKey("Remarks");
 
-  const monthKey = findKey(["Month"]);
-  if (!monthKey) return NextResponse.json({ error: 'Could not find a "Month" column in the file' }, { status: 400 });
+  if (!monthKey || !groupKey) {
+    return NextResponse.json({ error: 'File must have "Month" and "Commodity Group" columns' }, { status: 400 });
+  }
 
-  const itemKeyMap = items.map((item) => {
-    const def = itemDefByName.get(item.name);
-    const amountKey = item.hasAmount ? findKey([def?.excelAmountHeader, `${item.name} Amount`]) : undefined;
-    const quantityKey = item.hasQuantity ? findKey([def?.excelQuantityHeader, `${item.name} (${item.unit})`]) : undefined;
-    return { item, amountKey, quantityKey };
-  });
-
-  let monthsImported = 0;
+  const importBatch = `import-purchase-${new Date().toISOString().slice(0, 10)}-${Date.now()}`;
+  let created = 0;
   const errors: string[] = [];
 
   for (let i = 0; i < sheetRows.length; i++) {
     const row = sheetRows[i];
     const monthDate = excelValueToDate(row[monthKey]);
-    if (!monthDate) continue; // skip blank/unparseable rows
+    const groupName = row[groupKey] ? String(row[groupKey]).trim() : "";
+    if (!monthDate || !groupName) continue;
 
-    const entries = itemKeyMap.map(({ item, amountKey, quantityKey }) => ({
-      itemCategoryId: item.id,
-      amount: amountKey ? excelValueToNumber(row[amountKey]) : null,
-      quantity: quantityKey ? excelValueToNumber(row[quantityKey]) : null,
-    }));
+    const group = groupByName.get(norm(groupName));
+    if (!group) {
+      errors.push(`Row ${i + 2}: unknown commodity group "${groupName}"`);
+      continue;
+    }
 
     try {
-      await upsertMonthEntries(monthDate, entries, auth.session.username ?? "");
-      monthsImported++;
+      await prisma.purchaseEntry.create({
+        data: {
+          month: new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), 1)),
+          groupId: group.id,
+          amount: amountKey ? excelValueToNumber(row[amountKey]) : null,
+          quantity: quantityKey ? excelValueToNumber(row[quantityKey]) : null,
+          isDeduction: deductionKey ? /^(yes|true|1)$/i.test(String(row[deductionKey] ?? "").trim()) : false,
+          remarks: remarksKey ? String(row[remarksKey] ?? "").trim() : "",
+          enteredBy: auth.session.username ?? "",
+          importBatch,
+        },
+      });
+      created++;
     } catch (e) {
       errors.push(`Row ${i + 2}: ${e instanceof Error ? e.message : "unknown error"}`);
     }
   }
 
-  return NextResponse.json({ monthsImported, errors });
+  return NextResponse.json({ created, errors });
 }

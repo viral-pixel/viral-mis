@@ -1,20 +1,26 @@
 import { prisma } from "@/app/lib/prisma";
 
+export interface StatsFilter {
+  groupId?: number;
+  from?: string; // "YYYY-MM"
+  to?: string; // "YYYY-MM"
+}
+
 export interface MonthlyCostPoint {
-  monthLabel: string; // "Apr 2025"
-  monthKey: string; // "2025-04-01" (sortable, used as a link target)
+  monthLabel: string;
+  monthKey: string;
   totalAmount: number;
 }
 
-export interface ItemCostBreakdown {
-  itemId: number;
+export interface GroupCostBreakdown {
+  groupId: number;
   name: string;
   unit: string;
   totalAmount: number;
   totalQuantity: number;
 }
 
-export interface ItemTrendPoint {
+export interface GroupTrendPoint {
   monthLabel: string;
   monthKey: string;
   amount: number | null;
@@ -28,11 +34,10 @@ export interface PurchaseStats {
   latestMonthLabel: string | null;
   latestMonthSpend: number | null;
   monthlyCostTrend: MonthlyCostPoint[];
-  costByItem: ItemCostBreakdown[];
+  costByGroup: GroupCostBreakdown[];
 }
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 function monthLabel(d: Date) {
   return `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
@@ -40,36 +45,56 @@ function monthKey(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-export async function collectPurchaseStats(): Promise<PurchaseStats> {
-  const entries = await prisma.monthlyPurchase.findMany({ include: { itemCategory: true } });
+// A deduction entry (e.g. gas bottles handed to a vendor) subtracts from
+// the group/month total instead of adding.
+function signedAmount(e: { amount: number | null; isDeduction: boolean }) {
+  return e.amount == null ? 0 : e.isDeduction ? -e.amount : e.amount;
+}
+function signedQuantity(e: { quantity: number | null; isDeduction: boolean }) {
+  return e.quantity == null ? 0 : e.isDeduction ? -e.quantity : e.quantity;
+}
+
+function buildWhere(filter?: StatsFilter) {
+  const where: Record<string, unknown> = {};
+  if (filter?.groupId) where.groupId = filter.groupId;
+  if (filter?.from || filter?.to) {
+    where.month = {
+      ...(filter.from ? { gte: new Date(`${filter.from}-01`) } : {}),
+      ...(filter.to ? { lte: new Date(new Date(`${filter.to}-01`).getFullYear(), new Date(`${filter.to}-01`).getMonth() + 1, 0) } : {}),
+    };
+  }
+  return where;
+}
+
+export async function collectPurchaseStats(filter?: StatsFilter): Promise<PurchaseStats> {
+  const entries = await prisma.purchaseEntry.findMany({ where: buildWhere(filter), include: { group: true } });
 
   const monthTotals = new Map<string, { date: Date; total: number }>();
-  const itemTotals = new Map<number, ItemCostBreakdown>();
+  const groupTotals = new Map<number, GroupCostBreakdown>();
 
   for (const e of entries) {
     const key = monthKey(e.month);
     const existingMonth = monthTotals.get(key) ?? { date: e.month, total: 0 };
-    existingMonth.total += e.amount ?? 0;
+    existingMonth.total += signedAmount(e);
     monthTotals.set(key, existingMonth);
 
-    const existingItem = itemTotals.get(e.itemCategoryId) ?? {
-      itemId: e.itemCategoryId,
-      name: e.itemCategory.name,
-      unit: e.itemCategory.unit,
+    const existingGroup = groupTotals.get(e.groupId) ?? {
+      groupId: e.groupId,
+      name: e.group.name,
+      unit: e.group.unit,
       totalAmount: 0,
       totalQuantity: 0,
     };
-    existingItem.totalAmount += e.amount ?? 0;
-    existingItem.totalQuantity += e.quantity ?? 0;
-    itemTotals.set(e.itemCategoryId, existingItem);
+    existingGroup.totalAmount += signedAmount(e);
+    existingGroup.totalQuantity += signedQuantity(e);
+    groupTotals.set(e.groupId, existingGroup);
   }
 
   const monthlyCostTrend: MonthlyCostPoint[] = [...monthTotals.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, v]) => ({ monthKey: key, monthLabel: monthLabel(v.date), totalAmount: v.total }));
 
-  const costByItem = [...itemTotals.values()].sort((a, b) => b.totalAmount - a.totalAmount);
-
+  const costByGroup = [...groupTotals.values()].sort((a, b) => b.totalAmount - a.totalAmount);
   const totalSpend = monthlyCostTrend.reduce((s, m) => s + m.totalAmount, 0);
   const latest = monthlyCostTrend[monthlyCostTrend.length - 1];
 
@@ -79,20 +104,35 @@ export async function collectPurchaseStats(): Promise<PurchaseStats> {
     latestMonthLabel: latest?.monthLabel ?? null,
     latestMonthSpend: latest?.totalAmount ?? null,
     monthlyCostTrend,
-    costByItem,
+    costByGroup,
   };
 }
 
-export async function collectItemTrend(itemId: number): Promise<ItemTrendPoint[]> {
-  const entries = await prisma.monthlyPurchase.findMany({
-    where: { itemCategoryId: itemId },
+// Per-month amount/quantity/cost-per-unit for ONE group — entries within
+// the same month are summed first (net of deductions) so multiple vendor
+// purchases in a month collapse into one point on the trend line.
+export async function collectGroupTrend(groupId: number, filter?: Omit<StatsFilter, "groupId">): Promise<GroupTrendPoint[]> {
+  const entries = await prisma.purchaseEntry.findMany({
+    where: { ...buildWhere(filter), groupId },
     orderBy: { month: "asc" },
   });
-  return entries.map((e) => ({
-    monthLabel: monthLabel(e.month),
-    monthKey: monthKey(e.month),
-    amount: e.amount,
-    quantity: e.quantity,
-    costPerUnit: e.amount && e.quantity ? Math.round((e.amount / e.quantity) * 100) / 100 : null,
-  }));
+
+  const byMonth = new Map<string, { date: Date; amount: number; quantity: number; hasAmount: boolean; hasQuantity: boolean }>();
+  for (const e of entries) {
+    const key = monthKey(e.month);
+    const existing = byMonth.get(key) ?? { date: e.month, amount: 0, quantity: 0, hasAmount: false, hasQuantity: false };
+    if (e.amount != null) { existing.amount += signedAmount(e); existing.hasAmount = true; }
+    if (e.quantity != null) { existing.quantity += signedQuantity(e); existing.hasQuantity = true; }
+    byMonth.set(key, existing);
+  }
+
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, v]) => ({
+      monthKey: key,
+      monthLabel: monthLabel(v.date),
+      amount: v.hasAmount ? Math.round(v.amount) : null,
+      quantity: v.hasQuantity ? Math.round(v.quantity * 100) / 100 : null,
+      costPerUnit: v.hasAmount && v.hasQuantity && v.quantity !== 0 ? Math.round((v.amount / v.quantity) * 100) / 100 : null,
+    }));
 }

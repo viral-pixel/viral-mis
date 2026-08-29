@@ -265,44 +265,56 @@ model PartnerInsurance {
 }
 
 // ---- SubModule: "Purchase & Consumption Costing" (Ketan, sub-module 2) ----
-// The source Excel is one wide sheet: one row per month, ~25 commodities
-// each with an Amount + Quantity column pair (a few are amount-only or
-// quantity-only, e.g. the 4 Ramdev Masala sub-items share one combined
-// bill amount). Stored normalized here (one row per item per month)
-// instead of mirroring the wide layout directly — this is what makes
-// real costing analysis possible (cost/volume/cost-per-unit trend per
-// item over time), which is the actual point of this module per the
-// user. The wide layout is preserved as the Excel import/export format
-// (app/lib/purchaseExcel.ts) so it still round-trips through the
-// original spreadsheet shape.
+// The original source Excel was one wide sheet (one row per month, ~25
+// commodity columns). Redesigned 2026-08-29 per the user's real workflow:
+// several of the original commodities are analyzed as one combined group
+// (Roti/Paratha/Poori/Thepla; the 4 Ramdev Masala items; Gas+Wood; the 4
+// Curd items), and each group needs MULTIPLE purchase entries per month
+// (different vendors/brands), not just one number — see PurchaseGroup /
+// PurchaseEntry below.
 
-model PurchaseItemCategory {
-  id          Int     @id @default(autoincrement())
-  name        String  @unique
-  unit        String  @default("") // Kg, Ltr, Tin, Pcs, Bottles, Nos — blank if amount-only
-  hasAmount   Boolean @default(true)
-  hasQuantity Boolean @default(true)
-  sortOrder   Int     @default(0)
+// A costing "analysis group" — e.g. Roti/Paratha/Poori/Thepla are tracked
+// as ONE group (per user's 2026-08-29 request) even though they're
+// physically different items, because the business wants one combined
+// figure for analysis. Multiple PurchaseEntry rows per group per month are
+// expected and normal (different vendors/brands within the same month) —
+// remarks on each entry is how those get told apart, not a rigid schema
+// field, since the sub-breakdown varies by group.
+model PurchaseGroup {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  unit        String   @default("") // Kg, Ltr, Tin, Nos, Count — blank if amount-only or mixed-unit
+  hasAmount   Boolean  @default(true)
+  hasQuantity Boolean  @default(true)
+  sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
 
-  entries MonthlyPurchase[]
+  entries PurchaseEntry[]
 }
 
-model MonthlyPurchase {
-  id             Int                  @id @default(autoincrement())
-  month          DateTime             // normalized to the 1st of the month
-  itemCategoryId Int
-  itemCategory   PurchaseItemCategory @relation(fields: [itemCategoryId], references: [id], onDelete: Cascade)
-  amount         Float?
-  quantity       Float?
+// One purchase transaction within a month for a group. Several of these
+// can exist for the same (month, group) — e.g. three different Rice
+// vendors in the same month — and the analysis sums them for that
+// month's total. `isDeduction` supports the Gas-bottle case: when the
+// kitchen hands its own bottles to a vendor, that entry's amount/quantity
+// are SUBTRACTED from the group's monthly total instead of added.
+model PurchaseEntry {
+  id      Int           @id @default(autoincrement())
+  month   DateTime      // normalized to the 1st of the month
+  groupId Int
+  group   PurchaseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  amount    Float?
+  quantity  Float?
+  isDeduction Boolean @default(false)
+  remarks     String  @default("") // vendor/brand/sub-item note, e.g. "Roti - Vendor X", "Bottles given to ABC Caterers"
 
   enteredBy   String   @default("")
   importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([month, itemCategoryId])
   @@index([month])
+  @@index([groupId])
 }
 
 model RentAgreement {

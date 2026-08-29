@@ -1,30 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requireModuleAccessBySubModuleSlug, requireAdmin } from "@/app/lib/authz";
-import { PURCHASE_SUBMODULE_SLUG } from "@/app/lib/purchaseItems";
+import { PURCHASE_SUBMODULE_SLUG } from "@/app/lib/purchaseGroups";
 
 export async function GET() {
   const auth = await requireModuleAccessBySubModuleSlug(PURCHASE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
-  const items = await prisma.purchaseItemCategory.findMany({ orderBy: { sortOrder: "asc" } });
-  return NextResponse.json(items);
+  const groups = await prisma.purchaseGroup.findMany({ orderBy: { sortOrder: "asc" } });
+  return NextResponse.json(groups);
 }
 
-// Lets Admin add a new commodity later without a code change/redeploy —
-// e.g. if Ketan starts tracking a new item that isn't in the original
-// Excel's 26 columns.
+// Lets Admin grow the list of tracked commodity groups over time without a
+// code change.
 export async function POST(req: NextRequest) {
   const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
   const { name, unit, hasAmount, hasQuantity } = await req.json();
   if (!name || !String(name).trim()) {
-    return NextResponse.json({ error: "Item name is required" }, { status: 400 });
+    return NextResponse.json({ error: "Group name is required" }, { status: 400 });
   }
-  const count = await prisma.purchaseItemCategory.count();
+  const count = await prisma.purchaseGroup.count();
   try {
-    const created = await prisma.purchaseItemCategory.create({
+    const created = await prisma.purchaseGroup.create({
       data: {
         name: String(name).trim(),
         unit: unit ?? "",
@@ -35,6 +34,6 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(created, { status: 201 });
   } catch {
-    return NextResponse.json({ error: "An item with that name already exists" }, { status: 409 });
+    return NextResponse.json({ error: "A group with that name already exists" }, { status: 409 });
   }
 }
