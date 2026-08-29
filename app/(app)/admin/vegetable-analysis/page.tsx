@@ -55,7 +55,7 @@ function fmtQty(n: number | null) {
   return n == null ? "—" : `${Math.round(n).toLocaleString("en-IN")} kg`;
 }
 function fmtRate(n: number | null) {
-  return n == null ? "—" : `₹${n}`;
+  return n == null ? "—" : `₹${Math.round(n * 10) / 10}`;
 }
 
 const TABS = [
