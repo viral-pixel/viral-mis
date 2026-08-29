@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings } from "lucide-react";
+import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings, PieChart } from "lucide-react";
 import { C, FONT_HEAD } from "@/app/lib/constants";
 import { SUBMODULE_ROUTES } from "@/app/lib/subModuleRoutes";
 
@@ -58,6 +58,15 @@ export function Shell({ children }: { children: ReactNode }) {
             })}
           </div>
         ))}
+
+        {user?.isAdmin && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ padding: "0 10px 4px", color: "#6C817B", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              My Reports
+            </div>
+            <NavLink href="/admin/vegetable-analysis" label="Vegetable Cost Analysis" icon={PieChart} pathname={pathname} />
+          </div>
+        )}
 
         {user?.isAdmin && (
           <div style={{ marginTop: 14 }}>

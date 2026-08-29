@@ -465,3 +465,15 @@ model CashPurchaseEntry {
   @@index([date])
   @@index([category])
 }
+
+// Admin's private monthly meal count (Lunch+Dinner plates served company-wide)
+// — the one figure in the admin vegetable-cost dashboard that isn't derived
+// from Ketan's purchase data, since nothing else in the system tracks it.
+// Drives all "per plate" ratios (grams of veg/potato/onion per meal).
+model MonthlyMealCount {
+  id        Int      @id @default(autoincrement())
+  monthKey  String   @unique // "YYYY-MM"
+  countLD   Int
+  enteredBy String   @default("")
+  updatedAt DateTime @updatedAt
+}

@@ -1,10 +1,10 @@
 import { prisma } from "@/app/lib/prisma";
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function monthKeyOf(d: Date) {
+export function monthKeyOf(d: Date) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
-function monthLabelOf(key: string) {
+export function monthLabelOf(key: string) {
   const [y, m] = key.split("-");
   return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
 }
