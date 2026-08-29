@@ -8,16 +8,21 @@ function randomPassword() {
 }
 
 // Updates display name / admin flag / module assignments in one call, and
-// can also reset the password (returned once in the response — never
-// stored anywhere else, matching the no-email reset pattern used in the
-// other two tools).
+// can also set a new password — either a specific one Admin types in, or a
+// randomly generated one if left blank. Either way it's returned once in
+// the response and never stored anywhere else (no email/SMTP set up for
+// this small internal tool yet, matching the other two tools' pattern).
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
   const { id } = await params;
   const userId = Number(id);
 
-  const { displayName, isAdmin, moduleIds, resetPassword } = await req.json();
+  const { displayName, isAdmin, moduleIds, resetPassword, newPassword } = await req.json();
+
+  if (newPassword && String(newPassword).length < 8) {
+    return NextResponse.json({ error: "New password must be at least 8 characters" }, { status: 400 });
+  }
 
   await prisma.$transaction([
     prisma.user.update({
@@ -31,7 +36,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   ]);
 
   let generatedPassword: string | undefined;
-  if (resetPassword) {
+  if (newPassword) {
+    generatedPassword = String(newPassword);
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(generatedPassword, 10) } });
+  } else if (resetPassword) {
     generatedPassword = randomPassword();
     await prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(generatedPassword, 10) } });
   }

@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell } from "lucide-react";
+import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings } from "lucide-react";
 import { C, FONT_HEAD } from "@/app/lib/constants";
 import { SUBMODULE_ROUTES } from "@/app/lib/subModuleRoutes";
 
@@ -70,6 +70,7 @@ export function Shell({ children }: { children: ReactNode }) {
         )}
 
         <div style={{ marginTop: "auto" }}>
+          <NavLink href="/settings" label="Settings" icon={Settings} pathname={pathname} />
           <button onClick={logout} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", background: "none", border: "none", color: "#A9B7B2", fontSize: 13.5, cursor: "pointer", textAlign: "left" }}>
             <LogOut size={16} /><span style={{ flex: 1 }}>Log out</span>
           </button>

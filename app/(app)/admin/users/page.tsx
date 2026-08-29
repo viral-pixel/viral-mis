@@ -8,6 +8,10 @@ import { C } from "@/app/lib/constants";
 interface ModuleOpt { id: number; name: string }
 interface UserRow { id: number; username: string; displayName: string; isAdmin: boolean; moduleIds: number[] }
 
+function randomPasswordClient() {
+  return Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6).toUpperCase();
+}
+
 export default function UsersAdminPage() {
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [modules, setModules] = useState<ModuleOpt[]>([]);
@@ -110,7 +114,8 @@ function UserForm({
   const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
   const [isAdmin, setIsAdmin] = useState(initial?.isAdmin ?? false);
   const [moduleIds, setModuleIds] = useState<number[]>(initial?.moduleIds ?? []);
-  const [resetPassword, setResetPassword] = useState(false);
+  const [changePassword, setChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -125,7 +130,11 @@ function UserForm({
       const res = await fetch(`/api/admin/users/${initial.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayName, isAdmin, moduleIds, resetPassword }),
+        body: JSON.stringify({
+          displayName, isAdmin, moduleIds,
+          newPassword: changePassword && newPassword ? newPassword : undefined,
+          resetPassword: changePassword && !newPassword,
+        }),
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok) onSaved(d.generatedPassword ? { username: initial.username, password: d.generatedPassword } : undefined);
@@ -171,10 +180,23 @@ function UserForm({
           </Field>
         )}
         {initial && (
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: C.ink }}>
-            <input type="checkbox" checked={resetPassword} onChange={(e) => setResetPassword(e.target.checked)} />
-            Reset password (a new one will be generated and shown once)
-          </label>
+          <div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: C.ink }}>
+              <input type="checkbox" checked={changePassword} onChange={(e) => setChangePassword(e.target.checked)} />
+              Set a new password
+            </label>
+            {changePassword && (
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <Input
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Leave blank to auto-generate one"
+                  minLength={8}
+                />
+                <Btn variant="ghost" onClick={() => setNewPassword(randomPasswordClient())}>Generate</Btn>
+              </div>
+            )}
+          </div>
         )}
         {error && <div style={{ color: C.red, fontSize: 13 }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
