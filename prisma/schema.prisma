@@ -264,6 +264,47 @@ model PartnerInsurance {
   @@index([validDate])
 }
 
+// ---- SubModule: "Purchase & Consumption Costing" (Ketan, sub-module 2) ----
+// The source Excel is one wide sheet: one row per month, ~25 commodities
+// each with an Amount + Quantity column pair (a few are amount-only or
+// quantity-only, e.g. the 4 Ramdev Masala sub-items share one combined
+// bill amount). Stored normalized here (one row per item per month)
+// instead of mirroring the wide layout directly — this is what makes
+// real costing analysis possible (cost/volume/cost-per-unit trend per
+// item over time), which is the actual point of this module per the
+// user. The wide layout is preserved as the Excel import/export format
+// (app/lib/purchaseExcel.ts) so it still round-trips through the
+// original spreadsheet shape.
+
+model PurchaseItemCategory {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  unit        String  @default("") // Kg, Ltr, Tin, Pcs, Bottles, Nos — blank if amount-only
+  hasAmount   Boolean @default(true)
+  hasQuantity Boolean @default(true)
+  sortOrder   Int     @default(0)
+  createdAt   DateTime @default(now())
+
+  entries MonthlyPurchase[]
+}
+
+model MonthlyPurchase {
+  id             Int                  @id @default(autoincrement())
+  month          DateTime             // normalized to the 1st of the month
+  itemCategoryId Int
+  itemCategory   PurchaseItemCategory @relation(fields: [itemCategoryId], references: [id], onDelete: Cascade)
+  amount         Float?
+  quantity       Float?
+
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([month, itemCategoryId])
+  @@index([month])
+}
+
 model RentAgreement {
   id                Int       @id @default(autoincrement())
   premises          String

@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { COMPLIANCE_SUBMODULE_SLUG } from "../app/lib/complianceEntities";
+import { PURCHASE_SUBMODULE_SLUG, PURCHASE_ITEMS } from "../app/lib/purchaseItems";
 
 const prisma = new PrismaClient();
 
@@ -24,6 +25,24 @@ async function main() {
       slug: COMPLIANCE_SUBMODULE_SLUG,
     },
   });
+
+  await prisma.subModule.upsert({
+    where: { slug: PURCHASE_SUBMODULE_SLUG },
+    update: {},
+    create: {
+      moduleId: ketanModule.id,
+      name: "Purchase & Consumption Costing",
+      slug: PURCHASE_SUBMODULE_SLUG,
+    },
+  });
+
+  for (const item of PURCHASE_ITEMS) {
+    await prisma.purchaseItemCategory.upsert({
+      where: { name: item.name },
+      update: { unit: item.unit, hasAmount: item.hasAmount, hasQuantity: item.hasQuantity, sortOrder: item.sortOrder },
+      create: { name: item.name, unit: item.unit, hasAmount: item.hasAmount, hasQuantity: item.hasQuantity, sortOrder: item.sortOrder },
+    });
+  }
 
   const existingAdmin = await prisma.user.findUnique({ where: { username: "admin" } });
   const adminPassword = existingAdmin ? null : randomPassword();
@@ -58,7 +77,8 @@ async function main() {
   });
 
   console.log("Seed complete.");
-  console.log("Module:", ketanModule.name, "| SubModule slug:", COMPLIANCE_SUBMODULE_SLUG);
+  console.log("Module:", ketanModule.name, "| SubModules:", COMPLIANCE_SUBMODULE_SLUG, PURCHASE_SUBMODULE_SLUG);
+  console.log(`Seeded ${PURCHASE_ITEMS.length} purchase item categories.`);
   if (adminPassword) console.log(`New admin login -> username: admin  password: ${adminPassword}`);
   else console.log("admin user already existed, password unchanged");
   if (ketanPassword) console.log(`New ketan login -> username: ketan  password: ${ketanPassword}`);

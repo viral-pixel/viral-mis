@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, use } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Download, Upload } from "lucide-react";
 import { COMPLIANCE_ENTITIES, getEntityConfig, entityRowTitle, isRecordClosed, type EntityConfig } from "@/app/lib/complianceEntities";
 import { getExpiryStatus, EXPIRY_STATUS_LABEL, EXPIRY_STATUS_STYLE } from "@/app/lib/expiry";
 import { C, FONT_HEAD } from "@/app/lib/constants";
@@ -58,9 +58,40 @@ export default function EntityPage({ params }: { params: Promise<{ entity: strin
         title="Ketan Reports"
         sub="Agreements, Licenses & Insurance — mirrors the original MIS Excel workbook"
         action={
-          <Btn onClick={() => { setEditing(null); setShowForm(true); }}>
-            <Plus size={15} /> Add {entity.label}
-          </Btn>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <a href={`/api/compliance/${entity.slug}/export`} style={{ textDecoration: "none" }}>
+              <Btn variant="ghost"><Download size={15} /> Export</Btn>
+            </a>
+            <label style={{ display: "inline-flex" }}>
+              <Btn variant="ghost" onClick={() => document.getElementById(`import-${entity.slug}`)?.click()}>
+                <Upload size={15} /> Import
+              </Btn>
+              <input
+                id={`import-${entity.slug}`}
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: "none" }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const fd = new FormData();
+                  fd.append("file", file);
+                  const res = await fetch(`/api/compliance/${entity.slug}/import`, { method: "POST", body: fd });
+                  const d = await res.json().catch(() => ({}));
+                  if (res.ok) {
+                    alert(`Imported ${d.created} row(s).${d.errors?.length ? ` ${d.errors.length} error(s).` : ""}`);
+                    load();
+                  } else {
+                    alert(d.error || "Import failed");
+                  }
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <Btn onClick={() => { setEditing(null); setShowForm(true); }}>
+              <Plus size={15} /> Add {entity.label}
+            </Btn>
+          </div>
         }
       />
 
