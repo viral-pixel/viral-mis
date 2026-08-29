@@ -46,12 +46,18 @@ export default function DashboardPage() {
     <div>
       <SectionHead title="Dashboard" sub="Ketan Reports — Agreements, Licenses & Insurance" />
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 22 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
         <StatCard icon={FileStack} label="Total Records" value={compliance.totalRecords} tint={C.teal} />
         <StatCard icon={XCircle} label="Expired" value={compliance.statusBreakdown.expired} tint={C.red} />
         <StatCard icon={AlertTriangle} label="Expiring Soon (60d)" value={compliance.statusBreakdown.expiring_soon} tint={C.amber} />
         <StatCard icon={CheckCircle2} label="Active" value={compliance.statusBreakdown.active} tint={C.green} />
       </div>
+      {compliance.remindersSuppressedCount > 0 && (
+        <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 22 }}>
+          {compliance.remindersSuppressedCount} record{compliance.remindersSuppressedCount === 1 ? "" : "s"} excluded from the counts above — reminders turned off (typically closed sites/contracts).
+        </div>
+      )}
+      {compliance.remindersSuppressedCount === 0 && <div style={{ marginBottom: 22 }} />}
 
       <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16, marginBottom: 22, alignItems: "stretch" }}>
         <ChartPanel title="Records by Table" sub="How your data is distributed across the 8 tracked areas">

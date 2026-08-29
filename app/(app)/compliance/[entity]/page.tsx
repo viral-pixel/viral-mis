@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, use } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { COMPLIANCE_ENTITIES, getEntityConfig, entityRowTitle, type EntityConfig } from "@/app/lib/complianceEntities";
+import { COMPLIANCE_ENTITIES, getEntityConfig, entityRowTitle, isRecordClosed, type EntityConfig } from "@/app/lib/complianceEntities";
 import { getExpiryStatus, EXPIRY_STATUS_LABEL, EXPIRY_STATUS_STYLE } from "@/app/lib/expiry";
 import { C, FONT_HEAD } from "@/app/lib/constants";
 import { Btn, Modal, Field, Input, Select, Textarea, Table, Th, Td, Tag, Empty, ConfirmDelete, SectionHead } from "@/app/components/ui";
@@ -111,11 +111,14 @@ export default function EntityPage({ params }: { params: Promise<{ entity: strin
                     {entity.expiryFields.map((ef) => {
                       const status = getExpiryStatus(row[ef.key] ? new Date(row[ef.key]) : null);
                       if (status === "no_date") return null;
-                      const style = EXPIRY_STATUS_STYLE[status];
+                      const remindersOff = row.needsReminder === false;
+                      const style = remindersOff
+                        ? EXPIRY_STATUS_STYLE.no_date
+                        : EXPIRY_STATUS_STYLE[status];
                       return (
                         <span
                           key={ef.key}
-                          title={ef.label}
+                          title={remindersOff ? `${ef.label} — reminders turned off for this record` : ef.label}
                           style={{
                             fontSize: 11,
                             fontWeight: 600,
@@ -129,6 +132,7 @@ export default function EntityPage({ params }: { params: Promise<{ entity: strin
                         >
                           {entity.expiryFields.length > 1 ? `${ef.label}: ` : ""}
                           {EXPIRY_STATUS_LABEL[status]}
+                          {remindersOff ? " (reminders off)" : ""}
                         </span>
                       );
                     })}
@@ -164,6 +168,13 @@ export default function EntityPage({ params }: { params: Promise<{ entity: strin
 }
 
 function formatValue(field: { type: string }, value: unknown) {
+  if (field.type === "boolean") {
+    return value ? (
+      <span style={{ color: C.green, fontWeight: 600 }}>Yes</span>
+    ) : (
+      <span style={{ color: C.faint }}>No</span>
+    );
+  }
   if (value === null || value === undefined || value === "") return <span style={{ color: C.faint }}>—</span>;
   if (field.type === "date") {
     const d = new Date(value as string);
@@ -187,6 +198,10 @@ function EntityForm({
   const [values, setValues] = useState<Row>(() => {
     const v: Row = {};
     for (const f of entity.fields) {
+      if (f.key === "needsReminder") {
+        v[f.key] = initial ? initial[f.key] !== false : true;
+        continue;
+      }
       const raw = initial ? initial[f.key] : "";
       v[f.key] = f.type === "date" ? toDateInputValue(raw) : raw ?? "";
     }
@@ -194,8 +209,24 @@ function EntityForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Once the user manually touches the reminders checkbox themselves, stop
+  // auto-adjusting it when the status field changes — their explicit choice
+  // wins over the suggestion.
+  const [reminderTouched, setReminderTouched] = useState(false);
 
-  const set = (key: string, val: unknown) => setValues((v) => ({ ...v, [key]: val }));
+  const set = (key: string, val: unknown) => {
+    setValues((v) => {
+      const next = { ...v, [key]: val };
+      if (
+        entity.closedStatusField &&
+        key === entity.closedStatusField.key &&
+        !reminderTouched
+      ) {
+        next.needsReminder = !isRecordClosed(entity, val);
+      }
+      return next;
+    });
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,25 +252,41 @@ function EntityForm({
     <Modal title={initial ? `Edit ${entity.label}` : `Add ${entity.label}`} onClose={onClose} width={720}>
       <form onSubmit={submit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         {entity.fields.map((f) => (
-          <div key={f.key} style={{ gridColumn: f.type === "longtext" ? "1 / -1" : undefined }}>
-            <Field label={f.label}>
-              {f.type === "longtext" ? (
-                <Textarea rows={2} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />
-              ) : f.type === "select" ? (
-                <Select value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
-                  <option value="">—</option>
-                  {f.options?.map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </Select>
-              ) : (
-                <Input
-                  type={f.type === "date" ? "date" : f.type === "number" ? "number" : "text"}
-                  value={values[f.key] ?? ""}
-                  onChange={(e) => set(f.key, e.target.value)}
+          <div key={f.key} style={{ gridColumn: f.type === "longtext" || f.type === "boolean" ? "1 / -1" : undefined }}>
+            {f.type === "boolean" ? (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: C.ink, marginTop: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={!!values[f.key]}
+                  onChange={(e) => { setReminderTouched(true); set(f.key, e.target.checked); }}
                 />
-              )}
-            </Field>
+                {f.label}
+                {entity.closedStatusField && !values[f.key] && (
+                  <span style={{ color: C.sub, fontSize: 12 }}>
+                    (suggested off — {entity.closedStatusField.key === "siteStatus" ? "site" : "record"} marked closed)
+                  </span>
+                )}
+              </label>
+            ) : (
+              <Field label={f.label}>
+                {f.type === "longtext" ? (
+                  <Textarea rows={2} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />
+                ) : f.type === "select" ? (
+                  <Select value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                    <option value="">—</option>
+                    {f.options?.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    type={f.type === "date" ? "date" : f.type === "number" ? "number" : "text"}
+                    value={values[f.key] ?? ""}
+                    onChange={(e) => set(f.key, e.target.value)}
+                  />
+                )}
+              </Field>
+            )}
           </div>
         ))}
         {error && <div style={{ gridColumn: "1 / -1", color: C.red, fontSize: 13 }}>{error}</div>}

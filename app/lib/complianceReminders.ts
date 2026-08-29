@@ -11,6 +11,7 @@ export async function collectComplianceReminders(): Promise<ExpiryReminder[]> {
     const model = (prisma as unknown as Record<string, { findMany: () => Promise<Record<string, unknown>[]> }>)[entity.model];
     const rows = await model.findMany();
     for (const row of rows) {
+      if (row.needsReminder === false) continue;
       for (const ef of entity.expiryFields) {
         const raw = row[ef.key];
         if (!raw) continue;
@@ -47,6 +48,10 @@ export interface MonthlyExpiryCount {
 
 export interface ComplianceStats {
   totalRecords: number;
+  // Records currently excluded from reminders (typically closed
+  // sites/contracts/vehicles) — shown on the dashboard for transparency,
+  // so "why is this count lower than total records" is never a mystery.
+  remindersSuppressedCount: number;
   statusBreakdown: Record<ExpiryStatus, number>;
   recordsByEntity: EntityCount[];
   upcomingExpiriesByMonth: MonthlyExpiryCount[];
@@ -57,6 +62,7 @@ export async function collectComplianceStats(): Promise<ComplianceStats> {
   const recordsByEntity: EntityCount[] = [];
   const monthBuckets = new Map<string, number>(); // key: "YYYY-MM"
   let totalRecords = 0;
+  let remindersSuppressedCount = 0;
 
   for (const entity of COMPLIANCE_ENTITIES) {
     const model = (prisma as unknown as Record<string, { findMany: () => Promise<Record<string, unknown>[]> }>)[entity.model];
@@ -65,6 +71,10 @@ export async function collectComplianceStats(): Promise<ComplianceStats> {
     recordsByEntity.push({ label: entity.label, slug: entity.slug, count: rows.length });
 
     for (const row of rows) {
+      if (row.needsReminder === false) {
+        remindersSuppressedCount++;
+        continue;
+      }
       for (const ef of entity.expiryFields) {
         const raw = row[ef.key];
         const date = raw ? new Date(raw as string) : null;
@@ -86,5 +96,5 @@ export async function collectComplianceStats(): Promise<ComplianceStats> {
       return { monthLabel: `${monthNames[Number(m) - 1]} ${y}`, count };
     });
 
-  return { totalRecords, statusBreakdown, recordsByEntity, upcomingExpiriesByMonth };
+  return { totalRecords, remindersSuppressedCount, statusBreakdown, recordsByEntity, upcomingExpiriesByMonth };
 }

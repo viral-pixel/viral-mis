@@ -10,7 +10,7 @@
 // display name (which may be renamed later, e.g. if "Ketan" leaves).
 export const COMPLIANCE_SUBMODULE_SLUG = "ketan-compliance";
 
-export type FieldType = "text" | "longtext" | "number" | "date" | "select";
+export type FieldType = "text" | "longtext" | "number" | "date" | "select" | "boolean";
 
 export interface FieldConfig {
   key: string;
@@ -31,9 +31,15 @@ export interface EntityConfig {
   titleFields: string[]; // fields combined to label a row in tables/reminders
   fields: FieldConfig[];
   expiryFields: ExpiryFieldConfig[];
+  // Names the field (if any) whose value signals the underlying site/
+  // contract/vehicle is closed — used to auto-suggest turning reminders off
+  // for that record (2026-08-29, per user request: closed sites with
+  // expired insurance/licenses shouldn't clutter the reminders feed).
+  closedStatusField?: { key: string; closedValues: string[] };
 }
 
 const STATUS_OPTIONS = ["Active", "Closed"];
+const REMINDER_FIELD: FieldConfig = { key: "needsReminder", label: "Send Reminders For This Record", type: "boolean" };
 
 export const COMPLIANCE_ENTITIES: EntityConfig[] = [
   {
@@ -49,8 +55,10 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "startDate", label: "Start Date", type: "date" },
       { key: "endDate", label: "End Date", type: "date" },
       { key: "remarks", label: "Remarks", type: "longtext" },
+      REMINDER_FIELD,
     ],
     expiryFields: [{ key: "endDate", label: "Agreement End" }],
+    closedStatusField: { key: "siteStatus", closedValues: ["closed"] },
   },
   {
     slug: "food-license",
@@ -65,8 +73,10 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "hasLicense", label: "License Held (Yes/No/NA)", type: "text" },
       { key: "startDate", label: "Start Date", type: "date" },
       { key: "endDate", label: "End Date", type: "date" },
+      REMINDER_FIELD,
     ],
     expiryFields: [{ key: "endDate", label: "FSSAI End" }],
+    closedStatusField: { key: "siteStatus", closedValues: ["closed"] },
   },
   {
     slug: "wc-policy",
@@ -82,8 +92,10 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "startDate", label: "Start Date", type: "date" },
       { key: "endDate", label: "End Date", type: "date" },
       { key: "remarks", label: "Remarks", type: "longtext" },
+      REMINDER_FIELD,
     ],
     expiryFields: [{ key: "endDate", label: "WC Policy End" }],
+    closedStatusField: { key: "siteStatus", closedValues: ["closed"] },
   },
   {
     slug: "labour-license",
@@ -100,8 +112,10 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "endDate", label: "End Date", type: "date" },
       { key: "licenseNo", label: "License No", type: "text" },
       { key: "count", label: "Count", type: "number" },
+      REMINDER_FIELD,
     ],
     expiryFields: [{ key: "endDate", label: "License End" }],
+    closedStatusField: { key: "siteStatus", closedValues: ["closed"] },
   },
   {
     slug: "vehicles",
@@ -124,6 +138,7 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "usedFor", label: "Vehicle Used For", type: "text" },
       { key: "ownerName", label: "Name Of Owner", type: "text" },
       { key: "active", label: "Active", type: "select", options: ["Active", "Close"] },
+      REMINDER_FIELD,
     ],
     expiryFields: [
       { key: "agreementEnd", label: "Agreement End" },
@@ -131,6 +146,7 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "pucEnd", label: "PUC End" },
       { key: "fitnessEnd", label: "Fitness Certificate End" },
     ],
+    closedStatusField: { key: "active", closedValues: ["close", "closed"] },
   },
   {
     slug: "fire-insurance",
@@ -147,8 +163,10 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "validTill", label: "Valid Till", type: "date" },
       { key: "insuredFor", label: "Insured For", type: "text" },
       { key: "remarks", label: "Remarks", type: "text" },
+      REMINDER_FIELD,
     ],
     expiryFields: [{ key: "validTill", label: "Policy Valid Till" }],
+    closedStatusField: { key: "remarks", closedValues: ["close", "closed"] },
   },
   {
     slug: "partner-insurance",
@@ -165,8 +183,10 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "company", label: "Company", type: "text" },
       { key: "issueDate", label: "Issue Date", type: "date" },
       { key: "validDate", label: "Valid Date", type: "date" },
+      REMINDER_FIELD,
     ],
     expiryFields: [{ key: "validDate", label: "Policy Valid Date" }],
+    // No closed-status concept for personal policies — always defaults on.
   },
   {
     slug: "rent-agreement",
@@ -184,8 +204,10 @@ export const COMPLIANCE_ENTITIES: EntityConfig[] = [
       { key: "deposit", label: "Deposit", type: "number" },
       { key: "additionalRemarks", label: "Additional Remarks", type: "longtext" },
       { key: "status", label: "Status", type: "text" },
+      REMINDER_FIELD,
     ],
     expiryFields: [{ key: "validTill", label: "Rent Valid Till" }],
+    closedStatusField: { key: "status", closedValues: ["closed", "close", "surrendered"] },
   },
 ];
 
@@ -195,6 +217,15 @@ export function getEntityConfig(slug: string): EntityConfig | undefined {
 
 export function entityRowTitle(entity: EntityConfig, row: Record<string, unknown>): string {
   return entity.titleFields.map((f) => row[f] ?? "").filter(Boolean).join(" — ") || `#${row.id}`;
+}
+
+// True when the entity's designated status field currently reads as
+// "closed" (case-insensitive, trimmed) — used to auto-suggest the
+// needsReminder toggle, both in the form UI and in one-off backfills.
+export function isRecordClosed(entity: EntityConfig, statusValue: unknown): boolean {
+  if (!entity.closedStatusField) return false;
+  const v = String(statusValue ?? "").trim().toLowerCase();
+  return entity.closedStatusField.closedValues.includes(v);
 }
 
 // Coerces raw JSON-body strings into the types Prisma expects (Date objects
@@ -208,6 +239,8 @@ export function coerceEntityBody(entitySlug: string, body: Record<string, unknow
       data[field.key] = raw ? new Date(raw as string) : null;
     } else if (field.type === "number") {
       data[field.key] = raw === "" || raw === null || raw === undefined ? null : Number(raw);
+    } else if (field.type === "boolean") {
+      data[field.key] = !!raw;
     } else {
       data[field.key] = raw ?? "";
     }

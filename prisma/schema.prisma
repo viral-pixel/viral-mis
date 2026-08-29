@@ -81,6 +81,13 @@ model ClientAgreement {
   endDate      DateTime?
   remarks      String    @default("")
 
+  // Whether this record should appear in the reminders feed / dashboard
+  // expiry stats. Defaults to true but is auto-suggested off in the UI when
+  // the record's own status field reads Closed/Close/Surrendered (a closed
+  // site or contract doesn't need an expiry chased) — still manually
+  // overridable per record, e.g. a closed site that still needs one follow-up.
+  needsReminder Boolean @default(true)
+
   enteredBy   String @default("")
   importBatch String @default("")
   createdAt   DateTime @default(now())
@@ -98,6 +105,13 @@ model FoodLicense {
   hasLicense   String    @default("") // Yes / No / NA as recorded in the source sheet
   startDate    DateTime?
   endDate      DateTime?
+
+  // Whether this record should appear in the reminders feed / dashboard
+  // expiry stats. Defaults to true but is auto-suggested off in the UI when
+  // the record's own status field reads Closed/Close/Surrendered (a closed
+  // site or contract doesn't need an expiry chased) — still manually
+  // overridable per record, e.g. a closed site that still needs one follow-up.
+  needsReminder Boolean @default(true)
 
   enteredBy   String @default("")
   importBatch String @default("")
@@ -118,6 +132,13 @@ model WcPolicy {
   endDate      DateTime?
   remarks      String    @default("")
 
+  // Whether this record should appear in the reminders feed / dashboard
+  // expiry stats. Defaults to true but is auto-suggested off in the UI when
+  // the record's own status field reads Closed/Close/Surrendered (a closed
+  // site or contract doesn't need an expiry chased) — still manually
+  // overridable per record, e.g. a closed site that still needs one follow-up.
+  needsReminder Boolean @default(true)
+
   enteredBy   String @default("")
   importBatch String @default("")
   createdAt   DateTime @default(now())
@@ -137,6 +158,13 @@ model LabourLicense {
   endDate       DateTime?
   licenseNo     String    @default("")
   count         Int?
+
+  // Whether this record should appear in the reminders feed / dashboard
+  // expiry stats. Defaults to true but is auto-suggested off in the UI when
+  // the record's own status field reads Closed/Close/Surrendered (a closed
+  // site or contract doesn't need an expiry chased) — still manually
+  // overridable per record, e.g. a closed site that still needs one follow-up.
+  needsReminder Boolean @default(true)
 
   enteredBy   String @default("")
   importBatch String @default("")
@@ -169,6 +197,13 @@ model VehicleAgreement {
   ownerName        String @default("")
   active           String @default("Active") // Active / Close, as recorded in the source sheet
 
+  // Whether this record should appear in the reminders feed / dashboard
+  // expiry stats. Defaults to true but is auto-suggested off in the UI when
+  // the record's own status field reads Closed/Close/Surrendered (a closed
+  // site or contract doesn't need an expiry chased) — still manually
+  // overridable per record, e.g. a closed site that still needs one follow-up.
+  needsReminder Boolean @default(true)
+
   enteredBy   String @default("")
   importBatch String @default("")
   createdAt   DateTime @default(now())
@@ -186,6 +221,13 @@ model FireInsurance {
   validTill        DateTime?
   insuredFor       String  @default("")
   remarks          String  @default("") // also carries Active/Close status in the source sheet
+
+  // Whether this record should appear in the reminders feed / dashboard
+  // expiry stats. Defaults to true but is auto-suggested off in the UI when
+  // the record's own status field reads Closed/Close/Surrendered (a closed
+  // site or contract doesn't need an expiry chased) — still manually
+  // overridable per record, e.g. a closed site that still needs one follow-up.
+  needsReminder Boolean @default(true)
 
   enteredBy   String @default("")
   importBatch String @default("")
@@ -207,6 +249,13 @@ model PartnerInsurance {
   issueDate    DateTime?
   validDate    DateTime?
 
+  // Whether this record should appear in the reminders feed / dashboard
+  // expiry stats. Defaults to true but is auto-suggested off in the UI when
+  // the record's own status field reads Closed/Close/Surrendered (a closed
+  // site or contract doesn't need an expiry chased) — still manually
+  // overridable per record, e.g. a closed site that still needs one follow-up.
+  needsReminder Boolean @default(true)
+
   enteredBy   String @default("")
   importBatch String @default("")
   createdAt   DateTime @default(now())
@@ -227,6 +276,13 @@ model RentAgreement {
   deposit           Float?
   additionalRemarks String    @default("")
   status            String    @default("")
+
+  // Whether this record should appear in the reminders feed / dashboard
+  // expiry stats. Defaults to true but is auto-suggested off in the UI when
+  // the record's own status field reads Closed/Close/Surrendered (a closed
+  // site or contract doesn't need an expiry chased) — still manually
+  // overridable per record, e.g. a closed site that still needs one follow-up.
+  needsReminder Boolean @default(true)
 
   enteredBy   String @default("")
   importBatch String @default("")
