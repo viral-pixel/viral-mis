@@ -49,10 +49,10 @@ function fmtPct(n: number | null) {
   return n == null ? "—" : `${n}%`;
 }
 function fmtGrams(n: number | null) {
-  return n == null ? "—" : `${n}g`;
+  return n == null ? "—" : `${Math.round(n)}g`;
 }
 function fmtQty(n: number | null) {
-  return n == null ? "—" : `${n.toLocaleString("en-IN", { maximumFractionDigits: 1 })} kg`;
+  return n == null ? "—" : `${Math.round(n).toLocaleString("en-IN")} kg`;
 }
 function fmtRate(n: number | null) {
   return n == null ? "—" : `₹${n}`;
@@ -310,9 +310,9 @@ function ItemWiseTab() {
                     <Td>{i.itemName}</Td>
                     <Td>{fmtRate(i.jakirRate)}</Td>
                     <Td>{fmtRate(i.rajuRate)}</Td>
-                    <Td>{i.jakirQty || "—"}</Td>
-                    <Td>{i.rajuQty || "—"}</Td>
-                    <Td>{i.totalQty || "—"}</Td>
+                    <Td>{i.jakirQty ? Math.round(i.jakirQty) : "—"}</Td>
+                    <Td>{i.rajuQty ? Math.round(i.rajuQty) : "—"}</Td>
+                    <Td>{i.totalQty ? Math.round(i.totalQty) : "—"}</Td>
                     <Td>{i.jakirAmount ? fmtMoney(i.jakirAmount) : "—"}</Td>
                     <Td>{i.rajuAmount ? fmtMoney(i.rajuAmount) : "—"}</Td>
                     <Td><strong style={{ color: C.ink }}>{i.totalAmount ? fmtMoney(i.totalAmount) : "—"}</strong></Td>
