@@ -1,0 +1,237 @@
+// viral-mis: NCS India's internal MIS, replacing per-person Excel trackers.
+// Modules are named after the employee/responsibility area currently owning
+// that reporting domain (e.g. "Ketan Reports") — module identity lives in
+// the Module table, not in code, since these names/owners can change.
+// Each Module can hold several SubModules (one Excel workbook = one
+// SubModule); the concrete data tables per SubModule are bespoke, since
+// different SubModules track completely different things.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  isAdmin      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  moduleAccess UserModuleAccess[]
+}
+
+model Module {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  subModules   SubModule[]
+  userAccess   UserModuleAccess[]
+}
+
+// Join table: which users can enter data / see the dashboard for which
+// Module. Many-to-many per 2026-08-29 decision (an employee can be assigned
+// to more than one module). Admin users bypass this entirely (see full app
+// access regardless of rows here) — enforced in app/lib/authz.ts.
+model UserModuleAccess {
+  id       Int @id @default(autoincrement())
+  userId   Int
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleId Int
+  module   Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, moduleId])
+}
+
+model SubModule {
+  id       Int    @id @default(autoincrement())
+  moduleId Int
+  module   Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  name     String
+  slug     String @unique // used in routes, e.g. "ketan-compliance"
+
+  createdAt DateTime @default(now())
+
+  @@unique([moduleId, name])
+}
+
+// ---- SubModule: "Agreements, Licenses & Insurance" (Ketan, sub-module 1) ----
+// One Prisma model per source Excel tab. Every model carries a Start/End
+// (or equivalent) date pair so the shared expiry-status + reminders logic
+// (app/lib/expiry.ts) can compute Active / Expiring Soon / Expired the same
+// way across all of them. Field names are normalized; Excel's original
+// inconsistent "Status" text (Yes/No/NA/Closed/Active) is kept as free text
+// for reference but is no longer the source of truth for expiry state.
+
+model ClientAgreement {
+  id           Int       @id @default(autoincrement())
+  siteName     String
+  location     String    @default("")
+  contractType String    @default("")
+  siteStatus   String    @default("") // Active / Closed (site's overall contract status)
+  startDate    DateTime?
+  endDate      DateTime?
+  remarks      String    @default("")
+
+  enteredBy   String @default("")
+  importBatch String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([endDate])
+}
+
+model FoodLicense {
+  id           Int       @id @default(autoincrement())
+  siteName     String
+  location     String    @default("")
+  contractType String    @default("")
+  siteStatus   String    @default("")
+  hasLicense   String    @default("") // Yes / No / NA as recorded in the source sheet
+  startDate    DateTime?
+  endDate      DateTime?
+
+  enteredBy   String @default("")
+  importBatch String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([endDate])
+}
+
+model WcPolicy {
+  id           Int       @id @default(autoincrement())
+  siteName     String
+  location     String    @default("")
+  contractType String    @default("")
+  siteStatus   String    @default("")
+  hasPolicy    String    @default("")
+  startDate    DateTime?
+  endDate      DateTime?
+  remarks      String    @default("")
+
+  enteredBy   String @default("")
+  importBatch String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([endDate])
+}
+
+model LabourLicense {
+  id            Int       @id @default(autoincrement())
+  siteName      String
+  location      String    @default("")
+  contractType  String    @default("")
+  siteStatus    String    @default("")
+  licenseStatus String    @default("") // NR / YES etc. as recorded in the source sheet
+  startDate     DateTime?
+  endDate       DateTime?
+  licenseNo     String    @default("")
+  count         Int?
+
+  enteredBy   String @default("")
+  importBatch String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([endDate])
+}
+
+// Four independent expiry dates per vehicle — Agreement, Insurance, PUC,
+// Fitness — each tracked and reminded on separately, since they renew on
+// different cycles.
+model VehicleAgreement {
+  id     Int    @id @default(autoincrement())
+  vehicleNo   String
+  vehicleType String @default("")
+  location    String @default("")
+  site        String @default("")
+
+  agreementStart DateTime?
+  agreementEnd   DateTime?
+  insuranceStart DateTime?
+  insuranceEnd   DateTime?
+  pucStart       DateTime?
+  pucEnd         DateTime?
+  fitnessEnd     DateTime?
+
+  registrationDate DateTime?
+  usedFor          String @default("")
+  ownerName        String @default("")
+  active           String @default("Active") // Active / Close, as recorded in the source sheet
+
+  enteredBy   String @default("")
+  importBatch String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model FireInsurance {
+  id             Int       @id @default(autoincrement())
+  premises       String
+  address        String    @default("")
+  company        String    @default("")
+  policyAmount   Float?
+  insuredAmount  Float?
+  commencementDate DateTime?
+  validTill        DateTime?
+  insuredFor       String  @default("")
+  remarks          String  @default("") // also carries Active/Close status in the source sheet
+
+  enteredBy   String @default("")
+  importBatch String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([validTill])
+}
+
+model PartnerInsurance {
+  id           Int       @id @default(autoincrement())
+  proposerName String
+  companyName  String    @default("")
+  relation     String    @default("")
+  mobileNo     String    @default("")
+  dob          DateTime?
+  policyNo     String    @default("")
+  company      String    @default("")
+  issueDate    DateTime?
+  validDate    DateTime?
+
+  enteredBy   String @default("")
+  importBatch String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([validDate])
+}
+
+model RentAgreement {
+  id                Int       @id @default(autoincrement())
+  premises          String
+  address           String    @default("")
+  agreementDate     DateTime?
+  validTill         DateTime?
+  noOfYears         Int?
+  ownerName         String    @default("")
+  monthlyRent       Float?
+  deposit           Float?
+  additionalRemarks String    @default("")
+  status            String    @default("")
+
+  enteredBy   String @default("")
+  importBatch String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([validTill])
+}

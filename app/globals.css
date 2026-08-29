@@ -1,0 +1,24 @@
+@import url("https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap");
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #F5F4EF;
+  color: #1E2420;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+input,
+select,
+button,
+textarea {
+  font-family: inherit;
+}
