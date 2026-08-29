@@ -352,6 +352,7 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
   const [rows, setRows] = useState<PurchaseRow[] | null>(null);
   const [editing, setEditing] = useState<PurchaseRow | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showBatchForm, setShowBatchForm] = useState(false);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -390,7 +391,7 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
       } />
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-        <Btn onClick={() => { setEditing(null); setShowForm(true); }}><Plus size={15} /> Add Purchase</Btn>
+        <Btn onClick={() => setShowBatchForm(true)}><Plus size={15} /> Add Day&apos;s Purchase</Btn>
       </div>
 
       {rows === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="No purchases for this filter yet." /> : (
@@ -412,10 +413,195 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
         </Table>
       )}
 
+      {showBatchForm && (
+        <BatchPurchaseForm items={items} vendors={vendors} onClose={() => setShowBatchForm(false)} onSaved={() => { setShowBatchForm(false); load(); }} onVendorAdded={onVendorAdded} />
+      )}
       {showForm && (
         <PurchaseForm items={items} vendors={vendors} initial={editing} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); load(); }} onVendorAdded={onVendorAdded} />
       )}
     </div>
+  );
+}
+
+// One vendor's full day of items at once — mirrors how the paper bill and
+// the original Excel day-blocks actually work (one vendor, many items, one
+// sitting), instead of the old one-item-per-modal flow. Reopening the same
+// date+vendor preloads whatever was already saved (highlighted rows) so
+// entries can be extended or corrected without creating duplicates.
+function BatchPurchaseForm({
+  items, vendors, onClose, onSaved, onVendorAdded,
+}: {
+  items: VegItem[]; vendors: Vendor[]; onClose: () => void; onSaved: () => void; onVendorAdded: () => void;
+}) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [vendorId, setVendorId] = useState<number | "">("");
+  const [newVendor, setNewVendor] = useState("");
+  const [search, setSearch] = useState("");
+  const [newItemName, setNewItemName] = useState("");
+  const [lines, setLines] = useState<Record<number, { entryId: number | null; quantity: string; rate: string }>>({});
+  const [loadingExisting, setLoadingExisting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const addVendor = async () => {
+    if (!newVendor.trim()) return;
+    const res = await fetch("/api/vegetable/vendors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newVendor.trim() }) });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) { setNewVendor(""); onVendorAdded(); setVendorId(d.id); }
+    else alert(d.error || "Could not add vendor");
+  };
+
+  // Adding a missing item right from the entry grid (instead of a separate
+  // Manage Items screen) — jump the search box to it so it's the one row
+  // Ketan sees, ready to fill in immediately.
+  const addItem = async () => {
+    if (!newItemName.trim()) return;
+    const res = await fetch("/api/vegetable/items", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newItemName.trim() }) });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) { setSearch(newItemName.trim()); setNewItemName(""); onVendorAdded(); }
+    else alert(d.error || "Could not add item");
+  };
+
+  useEffect(() => {
+    if (!date || !vendorId) { setLines({}); return; }
+    setLoadingExisting(true);
+    fetch(`/api/vegetable/purchases?vendorId=${vendorId}&date=${date}`)
+      .then((r) => r.json())
+      .then((rows: PurchaseRow[]) => {
+        const map: Record<number, { entryId: number | null; quantity: string; rate: string }> = {};
+        for (const r of rows) map[r.itemId] = { entryId: r.id, quantity: String(r.quantity), rate: String(r.rate) };
+        setLines(map);
+        setLoadingExisting(false);
+      });
+  }, [date, vendorId]);
+
+  const setLine = (itemId: number, patch: Partial<{ quantity: string; rate: string }>) => {
+    setLines((prev) => ({
+      ...prev,
+      [itemId]: { entryId: prev[itemId]?.entryId ?? null, quantity: prev[itemId]?.quantity ?? "", rate: prev[itemId]?.rate ?? "", ...patch },
+    }));
+  };
+
+  const filteredItems = search.trim() ? items.filter((i) => i.name.toLowerCase().includes(search.trim().toLowerCase())) : items;
+
+  const activeCount = Object.values(lines).filter((l) => l.quantity && l.rate).length;
+  const totalAmount = Object.values(lines).reduce((s, l) => {
+    const q = Number(l.quantity), r = Number(l.rate);
+    return s + (l.quantity && l.rate && !isNaN(q) && !isNaN(r) ? q * r : 0);
+  }, 0);
+
+  const submit = async () => {
+    if (!date || !vendorId) { setError("Pick a date and vendor first"); return; }
+    const jobs: Promise<Response>[] = [];
+    for (const item of items) {
+      const line = lines[item.id];
+      if (!line || !line.quantity || !line.rate) continue;
+      const q = Number(line.quantity), r = Number(line.rate);
+      if (isNaN(q) || isNaN(r)) continue;
+      if (line.entryId) {
+        jobs.push(fetch(`/api/vegetable/purchases/${line.entryId}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, itemId: item.id, vendorId, quantity: q, rate: r }),
+        }));
+      } else {
+        jobs.push(fetch("/api/vegetable/purchases", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, itemId: item.id, vendorId, quantity: q, rate: r }),
+        }));
+      }
+    }
+    if (jobs.length === 0) { setError("Enter quantity and rate for at least one item"); return; }
+    setSaving(true); setError("");
+    const results = await Promise.all(jobs);
+    const failed = results.filter((r) => !r.ok).length;
+    setSaving(false);
+    if (failed > 0) { setError(`${failed} of ${jobs.length} line(s) failed to save — please retry.`); return; }
+    onSaved();
+  };
+
+  return (
+    <Modal title="Add Day's Purchase" onClose={onClose} width={720}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
+          <Field label="Vendor">
+            <Select value={vendorId} onChange={(e) => setVendorId(e.target.value ? Number(e.target.value) : "")} required>
+              <option value="">Select…</option>
+              {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Input value={newVendor} onChange={(e) => setNewVendor(e.target.value)} placeholder="New vendor name" style={{ flex: 1 }} />
+          <Btn type="button" variant="ghost" onClick={addVendor}>Add Vendor</Btn>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Input value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="New vegetable/fruit item name (not in the list below)" style={{ flex: 1 }} />
+          <Btn type="button" variant="ghost" onClick={addItem}>Add Item</Btn>
+        </div>
+
+        {date && vendorId ? (
+          <>
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item…" />
+            {loadingExisting ? <Empty text="Loading…" /> : (
+              <div style={{ maxHeight: "42vh", overflowY: "auto", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead style={{ position: "sticky", top: 0, background: "#fff" }}>
+                    <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <th style={{ textAlign: "left", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11.5 }}>ITEM</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11.5, width: 110 }}>QTY (KG)</th>
+                      <th style={{ textAlign: "left", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11.5, width: 110 }}>RATE (₹)</th>
+                      <th style={{ textAlign: "right", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11.5, width: 100 }}>AMOUNT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredItems.map((item) => {
+                      const line = lines[item.id];
+                      const hasExisting = !!line?.entryId;
+                      const q = line ? Number(line.quantity) : NaN;
+                      const r = line ? Number(line.rate) : NaN;
+                      const amt = line?.quantity && line?.rate && !isNaN(q) && !isNaN(r) ? q * r : null;
+                      return (
+                        <tr key={item.id} style={{ borderTop: `1px solid ${C.border}`, background: hasExisting ? "#F0FBF6" : "transparent" }}>
+                          <td style={{ padding: "5px 10px" }}>{item.name}</td>
+                          <td style={{ padding: "5px 6px" }}>
+                            <input
+                              type="number" step="any" value={line?.quantity ?? ""}
+                              onChange={(e) => setLine(item.id, { quantity: e.target.value })}
+                              style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13, fontFamily: FONT_BODY }}
+                            />
+                          </td>
+                          <td style={{ padding: "5px 6px" }}>
+                            <input
+                              type="number" step="any" value={line?.rate ?? ""}
+                              onChange={(e) => setLine(item.id, { rate: e.target.value })}
+                              style={{ width: "100%", padding: "5px 7px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13, fontFamily: FONT_BODY }}
+                            />
+                          </td>
+                          <td style={{ padding: "5px 10px", textAlign: "right", color: C.sub }}>{amt != null ? fmtMoney(amt) : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: C.sub }}>
+              <span>{activeCount} item(s) entered · green rows were already saved for this date &amp; vendor</span>
+              <span>Total: <strong style={{ color: C.ink }}>{fmtMoney(totalAmount)}</strong> — check this against the vendor&apos;s bill</span>
+            </div>
+          </>
+        ) : (
+          <div style={{ color: C.sub, fontSize: 13, padding: "10px 0" }}>Pick a date and vendor to start entering items.</div>
+        )}
+
+        {error && <div style={{ color: C.red, fontSize: 13 }}>{error}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn onClick={submit} disabled={saving || !date || !vendorId}>{saving ? "Saving…" : "Save All"}</Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

@@ -12,11 +12,19 @@ export async function GET(req: NextRequest) {
   const vendorId = params.get("vendorId");
   const from = params.get("from");
   const to = params.get("to");
+  const date = params.get("date");
 
   const where: Record<string, unknown> = {};
   if (itemId) where.itemId = Number(itemId);
   if (vendorId) where.vendorId = Number(vendorId);
-  if (from || to) {
+  if (date) {
+    // Exact-day match — used by the batch entry grid to preload whatever was
+    // already saved for a given date+vendor before Ketan adds more items.
+    const start = new Date(`${date}T00:00:00.000Z`);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 1);
+    where.date = { gte: start, lt: end };
+  } else if (from || to) {
     where.date = {
       ...(from ? { gte: new Date(`${from}-01`) } : {}),
       ...(to ? { lte: new Date(new Date(`${to}-01`).getFullYear(), new Date(`${to}-01`).getMonth() + 1, 0) } : {}),
