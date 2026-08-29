@@ -531,15 +531,6 @@ function BatchPurchaseForm({
             </Select>
           </Field>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Input value={newVendor} onChange={(e) => setNewVendor(e.target.value)} placeholder="New vendor name" style={{ flex: 1 }} />
-          <Btn type="button" variant="ghost" onClick={addVendor}>Add Vendor</Btn>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Input value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="New vegetable/fruit item name (not in the list below)" style={{ flex: 1 }} />
-          <Btn type="button" variant="ghost" onClick={addItem}>Add Item</Btn>
-        </div>
-
         {date && vendorId ? (
           <>
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item…" />
@@ -594,6 +585,15 @@ function BatchPurchaseForm({
         ) : (
           <div style={{ color: C.sub, fontSize: 13, padding: "10px 0" }}>Pick a date and vendor to start entering items.</div>
         )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <Input value={newVendor} onChange={(e) => setNewVendor(e.target.value)} placeholder="New vendor name" style={{ flex: 1 }} />
+          <Btn type="button" variant="ghost" onClick={addVendor}>Add Vendor</Btn>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Input value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="New vegetable/fruit item name (not in the list below)" style={{ flex: 1 }} />
+          <Btn type="button" variant="ghost" onClick={addItem}>Add Item</Btn>
+        </div>
 
         {error && <div style={{ color: C.red, fontSize: 13 }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
