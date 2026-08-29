@@ -40,21 +40,29 @@ export interface AdminVegMonthRow {
   pureVegQty: number | null; // null = not tracked that month, distinct from a genuine zero
   potatoQty: number | null;
   onionQty: number | null;
+  // Vendor-split quantity — only available for live months (Aug 2026+);
+  // his own "Vegetable Report" sheet only ever tracked a combined Qty
+  // Order, never split by vendor, so historical months are null here.
+  jakirQty: number | null;
+  rajuQty: number | null;
   countLD: number | null;
   perPlatePureVeg: number | null; // grams per plate
   perPlatePotato: number | null;
   perPlateOnion: number | null;
   perPlatePotatoOnion: number | null;
+  perPlateJakir: number | null;
+  perPlateRaju: number | null;
 }
 
 interface MonthAccum {
   jakirAmount: number; rajuAmount: number; pureVegAmount: number;
   potatoAmount: number; onionAmount: number; flakesAmount: number; fruitCashAmount: number;
   pureVegQty: number | null; potatoQty: number | null; onionQty: number | null;
+  jakirQty: number | null; rajuQty: number | null;
 }
 
 function emptyAccum(): MonthAccum {
-  return { jakirAmount: 0, rajuAmount: 0, pureVegAmount: 0, potatoAmount: 0, onionAmount: 0, flakesAmount: 0, fruitCashAmount: 0, pureVegQty: 0, potatoQty: 0, onionQty: 0 };
+  return { jakirAmount: 0, rajuAmount: 0, pureVegAmount: 0, potatoAmount: 0, onionAmount: 0, flakesAmount: 0, fruitCashAmount: 0, pureVegQty: 0, potatoQty: 0, onionQty: 0, jakirQty: 0, rajuQty: 0 };
 }
 
 export async function collectAdminVegSummary(): Promise<AdminVegMonthRow[]> {
@@ -76,8 +84,8 @@ export async function collectAdminVegSummary(): Promise<AdminVegMonthRow[]> {
     const key = monthKeyOf(e.date);
     if (key <= HISTORICAL_CUTOFF_MONTH) continue; // frozen historical months are overlaid below, not computed live
     const m = get(key);
-    if (e.vendor.name === "Jakir") m.jakirAmount += e.amount;
-    else if (e.vendor.name === "Raju") m.rajuAmount += e.amount;
+    if (e.vendor.name === "Jakir") { m.jakirAmount += e.amount; m.jakirQty = (m.jakirQty ?? 0) + e.quantity; }
+    else if (e.vendor.name === "Raju") { m.rajuAmount += e.amount; m.rajuQty = (m.rajuQty ?? 0) + e.quantity; }
     m.pureVegAmount += e.amount;
     m.pureVegQty = (m.pureVegQty ?? 0) + e.quantity;
   }
@@ -109,6 +117,7 @@ export async function collectAdminVegSummary(): Promise<AdminVegMonthRow[]> {
       jakirAmount: snap.jakirAmount, rajuAmount: snap.rajuAmount, pureVegAmount: snap.jakirAmount + snap.rajuAmount,
       potatoAmount: snap.potatoAmount, onionAmount: snap.onionAmount, flakesAmount: snap.flakesAmount, fruitCashAmount: snap.fruitCashAmount,
       pureVegQty: snap.pureVegQty, potatoQty: snap.potatoQty, onionQty: snap.onionQty,
+      jakirQty: null, rajuQty: null, // never split by vendor in his own reconciled sheet
     });
   }
 
@@ -144,11 +153,15 @@ export async function collectAdminVegSummary(): Promise<AdminVegMonthRow[]> {
       pureVegQty: m.pureVegQty != null ? Math.round(m.pureVegQty * 100) / 100 : null,
       potatoQty: m.potatoQty != null ? Math.round(m.potatoQty * 100) / 100 : null,
       onionQty: m.onionQty != null ? Math.round(m.onionQty * 100) / 100 : null,
+      jakirQty: m.jakirQty != null ? Math.round(m.jakirQty * 100) / 100 : null,
+      rajuQty: m.rajuQty != null ? Math.round(m.rajuQty * 100) / 100 : null,
       countLD,
       perPlatePureVeg: gramsPerPlate(m.pureVegQty),
       perPlatePotato,
       perPlateOnion,
       perPlatePotatoOnion: perPlatePotato != null && perPlateOnion != null ? Math.round((perPlatePotato + perPlateOnion) * 100) / 100 : null,
+      perPlateJakir: gramsPerPlate(m.jakirQty),
+      perPlateRaju: gramsPerPlate(m.rajuQty),
     };
   });
 }

@@ -13,9 +13,19 @@ interface MonthlyRow {
   grandTotal: number;
   potatoPct: number | null; onionPct: number | null; flakesPct: number | null; nonVegPct: number | null;
   pureVegQty: number | null; potatoQty: number | null; onionQty: number | null;
+  jakirQty: number | null; rajuQty: number | null;
   countLD: number | null;
   perPlatePureVeg: number | null; perPlatePotato: number | null; perPlateOnion: number | null; perPlatePotatoOnion: number | null;
+  perPlateJakir: number | null; perPlateRaju: number | null;
 }
+
+const FIELD_GROUPS = [
+  ["amount", "Amount (₹)"],
+  ["quantity", "Quantity (Kg)"],
+  ["perplate", "Per Day / Per Plate"],
+  ["vendor", "Vendor Split (Jakir/Raju)"],
+] as const;
+type FieldGroup = (typeof FIELD_GROUPS)[number][0];
 
 interface PotatoOnionRow {
   monthKey: string; monthLabel: string;
@@ -125,6 +135,12 @@ function MonthlySummaryTab() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [importing, setImporting] = useState(false);
+  const [fields, setFields] = useState<Set<FieldGroup>>(new Set(["amount", "quantity", "perplate", "vendor"]));
+  const toggleField = (f: FieldGroup) => setFields((prev) => {
+    const next = new Set(prev);
+    if (next.has(f)) next.delete(f); else next.add(f);
+    return next;
+  });
 
   const load = () => fetch("/api/admin/vegetable-analysis/summary").then((r) => r.json()).then(setRows);
   useEffect(() => { load(); }, []);
@@ -221,7 +237,7 @@ function MonthlySummaryTab() {
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
             <Field label="From"><Input type="month" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 140 }} /></Field>
             <Field label="To"><Input type="month" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 140 }} /></Field>
-            <a href="/api/admin/vegetable-analysis/export-summary" style={{ textDecoration: "none" }}>
+            <a href={`/api/admin/vegetable-analysis/export-summary?fields=${[...fields].join(",")}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`} style={{ textDecoration: "none" }}>
               <Btn variant="ghost">Export Excel</Btn>
             </a>
             <label style={{ display: "inline-flex" }}>
@@ -248,6 +264,15 @@ function MonthlySummaryTab() {
           </div>
         }
       >
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 14, fontSize: 12.5 }}>
+          <span style={{ color: C.sub, fontWeight: 600 }}>Show:</span>
+          {FIELD_GROUPS.map(([key, label]) => (
+            <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={fields.has(key)} onChange={() => toggleField(key)} />
+              {label}
+            </label>
+          ))}
+        </div>
         {rangeTotal && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 14, padding: 12, background: C.tealSoft, borderRadius: 8, fontSize: 13 }}>
             <div style={{ fontWeight: 700, color: C.tealDark }}>Range total ({rangeTotal.months} month{rangeTotal.months !== 1 ? "s" : ""}):</div>
@@ -263,44 +288,71 @@ function MonthlySummaryTab() {
             <Table>
               <thead>
                 <tr>
-                  <Th>Month</Th><Th>Pure Veg ₹</Th><Th>Veg Qty</Th><Th>Potato ₹</Th><Th>Potato Qty</Th><Th>Onion ₹</Th><Th>Onion Qty</Th>
-                  <Th>Flakes</Th><Th>Fruit&amp;Cash</Th><Th>Grand Total</Th><Th>Non-Veg %</Th><Th>Count L/D</Th><Th>Per Plate (Veg)</Th>
+                  <Th>Month</Th>
+                  {fields.has("amount") && <><Th>Pure Veg ₹</Th><Th>Potato ₹</Th><Th>Onion ₹</Th><Th>Flakes</Th><Th>Fruit&amp;Cash</Th><Th>Grand Total</Th><Th>Non-Veg %</Th></>}
+                  {fields.has("quantity") && <><Th>Veg Qty</Th><Th>Potato Qty</Th><Th>Onion Qty</Th></>}
+                  {fields.has("perplate") && <><Th>Count L/D</Th><Th>Per Plate Veg</Th><Th>Per Plate Potato</Th><Th>Per Plate Onion</Th></>}
+                  {fields.has("vendor") && <><Th>Jakir ₹</Th><Th>Raju ₹</Th><Th>Jakir Qty</Th><Th>Raju Qty</Th><Th>Per Plate Jakir</Th><Th>Per Plate Raju</Th></>}
                 </tr>
               </thead>
               <tbody>
                 {displayRows.map((r) => (
                   <tr key={r.monthKey}>
                     <Td>{r.monthLabel}</Td>
-                    <Td>{fmtMoney(r.pureVegAmount)}</Td>
-                    <Td>{fmtQty(r.pureVegQty)}</Td>
-                    <Td>{fmtMoney(r.potatoAmount)}</Td>
-                    <Td>{fmtQty(r.potatoQty)}</Td>
-                    <Td>{fmtMoney(r.onionAmount)}</Td>
-                    <Td>{fmtQty(r.onionQty)}</Td>
-                    <Td>{fmtMoney(r.flakesAmount)}</Td>
-                    <Td>{fmtMoney(r.fruitCashAmount)}</Td>
-                    <Td><strong style={{ color: C.ink }}>{fmtMoney(r.grandTotal)}</strong></Td>
-                    <Td>{fmtPct(r.nonVegPct)}</Td>
-                    <Td>
-                      {editingMonth === r.monthKey ? (
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          <Input
-                            type="number" value={editValue} onChange={(e) => setEditValue(e.target.value)}
-                            style={{ width: 90, padding: "4px 7px" }} autoFocus
-                          />
-                          <Btn onClick={() => saveCount(r.monthKey)} disabled={saving} style={{ padding: "4px 10px", fontSize: 12 }}>Save</Btn>
-                          <button onClick={() => setEditingMonth(null)} style={{ background: "none", border: "none", color: C.sub, cursor: "pointer", fontSize: 12 }}>Cancel</button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => { setEditingMonth(r.monthKey); setEditValue(r.countLD != null ? String(r.countLD) : ""); }}
-                          style={{ background: "none", border: "none", color: r.countLD != null ? C.ink : C.teal, cursor: "pointer", fontSize: 13, fontWeight: r.countLD == null ? 600 : 400, textDecoration: r.countLD == null ? "underline" : "none" }}
-                        >
-                          {r.countLD != null ? r.countLD.toLocaleString("en-IN") : "+ Enter"}
-                        </button>
-                      )}
-                    </Td>
-                    <Td>{fmtGrams(r.perPlatePureVeg)}</Td>
+                    {fields.has("amount") && (
+                      <>
+                        <Td>{fmtMoney(r.pureVegAmount)}</Td>
+                        <Td>{fmtMoney(r.potatoAmount)}</Td>
+                        <Td>{fmtMoney(r.onionAmount)}</Td>
+                        <Td>{fmtMoney(r.flakesAmount)}</Td>
+                        <Td>{fmtMoney(r.fruitCashAmount)}</Td>
+                        <Td><strong style={{ color: C.ink }}>{fmtMoney(r.grandTotal)}</strong></Td>
+                        <Td>{fmtPct(r.nonVegPct)}</Td>
+                      </>
+                    )}
+                    {fields.has("quantity") && (
+                      <>
+                        <Td>{fmtQty(r.pureVegQty)}</Td>
+                        <Td>{fmtQty(r.potatoQty)}</Td>
+                        <Td>{fmtQty(r.onionQty)}</Td>
+                      </>
+                    )}
+                    {fields.has("perplate") && (
+                      <>
+                        <Td>
+                          {editingMonth === r.monthKey ? (
+                            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <Input
+                                type="number" value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                                style={{ width: 90, padding: "4px 7px" }} autoFocus
+                              />
+                              <Btn onClick={() => saveCount(r.monthKey)} disabled={saving} style={{ padding: "4px 10px", fontSize: 12 }}>Save</Btn>
+                              <button onClick={() => setEditingMonth(null)} style={{ background: "none", border: "none", color: C.sub, cursor: "pointer", fontSize: 12 }}>Cancel</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingMonth(r.monthKey); setEditValue(r.countLD != null ? String(r.countLD) : ""); }}
+                              style={{ background: "none", border: "none", color: r.countLD != null ? C.ink : C.teal, cursor: "pointer", fontSize: 13, fontWeight: r.countLD == null ? 600 : 400, textDecoration: r.countLD == null ? "underline" : "none" }}
+                            >
+                              {r.countLD != null ? r.countLD.toLocaleString("en-IN") : "+ Enter"}
+                            </button>
+                          )}
+                        </Td>
+                        <Td>{fmtGrams(r.perPlatePureVeg)}</Td>
+                        <Td>{fmtGrams(r.perPlatePotato)}</Td>
+                        <Td>{fmtGrams(r.perPlateOnion)}</Td>
+                      </>
+                    )}
+                    {fields.has("vendor") && (
+                      <>
+                        <Td>{fmtMoney(r.jakirAmount)}</Td>
+                        <Td>{fmtMoney(r.rajuAmount)}</Td>
+                        <Td>{fmtQty(r.jakirQty)}</Td>
+                        <Td>{fmtQty(r.rajuQty)}</Td>
+                        <Td>{fmtGrams(r.perPlateJakir)}</Td>
+                        <Td>{fmtGrams(r.perPlateRaju)}</Td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
