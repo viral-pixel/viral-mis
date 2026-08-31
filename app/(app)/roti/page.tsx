@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Settings2 } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { SectionHead, Btn, Table, Th, Td, Empty, Field, Input, Textarea, Modal, ConfirmDelete } from "@/app/components/ui";
+import { Plus, Settings2, Utensils, Layers, CalendarDays, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, AlertTriangle, CalendarX, PackageX } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { SectionHead, Btn, Table, Th, Td, Empty, Field, Input, Textarea, Modal, ConfirmDelete, StatCard } from "@/app/components/ui";
 import { C, FONT_BODY, CHART_COLORS } from "@/app/lib/constants";
 import { computeRotiSummary, RotiMasterRef } from "@/app/lib/rotiSummary";
 
@@ -96,7 +96,7 @@ export default function RotiPage() {
       {tab === "entries" ? (
         <EntriesTab sites={sites} mealTypes={mealTypes} categories={categories} isAdmin={isAdmin} />
       ) : (
-        <SummaryTab mealTypes={mealTypes} />
+        <SummaryTab />
       )}
     </div>
   );
@@ -361,28 +361,224 @@ function DayEntryForm({
 
 // ---------------------------------------------------------------- Summary
 
-function SummaryTab({ mealTypes }: { mealTypes: RotiMasterRef[] }) {
+interface DailyBreakdownRow {
+  date: string;
+  remarks: string;
+  byCategory: Record<number, number>;
+  byMeal: Record<number, number>;
+  total: number;
+}
+interface SummaryData {
+  sites: RotiMasterRef[];
+  mealTypes: RotiMasterRef[];
+  categories: RotiMasterRef[];
+  perSite: ReturnType<typeof computeRotiSummary>["perSite"];
+  perCategory: ReturnType<typeof computeRotiSummary>["perCategory"];
+  dailyBreakdown: DailyBreakdownRow[];
+  dayCount: number;
+}
+
+// Deviation flag on the day-by-day table, compared against the SAME
+// weekday's trailing average — not a plain calendar-trailing average.
+// Verified against the real imported data that a naive trailing-7-calendar-
+// day average flags nearly every Sunday as "under-ordered" for months on
+// end, because Sundays are structurally ~50% lower than the rest of the
+// week here — a real, repeating pattern, not a problem. Comparing each day
+// only to its last several same-weekday occurrences (e.g. Sunday vs. the
+// last 6 Sundays) is what actually isolates genuine one-off deviations from
+// the normal weekly rhythm. Requires >=3 prior same-weekday data points
+// before flagging, and the day itself must clear a small floor so a
+// near-zero day doesn't get flagged as a "huge spike" off another
+// near-zero baseline.
+const TREND_FLAG_PCT = 30;
+const TREND_FLAG_MIN = 50;
+const WEEKDAY_LOOKBACK = 6;
+
+function sameWeekdayAverage(byDate: Map<string, DailyBreakdownRow>, dateStr: string): number | null {
+  const d = new Date(dateStr + "T00:00:00Z");
+  const vals: number[] = [];
+  for (let w = 1; w <= WEEKDAY_LOOKBACK; w++) {
+    const prior = new Date(d);
+    prior.setUTCDate(prior.getUTCDate() - 7 * w);
+    const row = byDate.get(prior.toISOString().slice(0, 10));
+    if (row) vals.push(row.total);
+  }
+  if (vals.length < 3) return null;
+  return vals.reduce((s, v) => s + v, 0) / vals.length;
+}
+
+function trendFlag(byDate: Map<string, DailyBreakdownRow>, day: DailyBreakdownRow): "high" | "low" | null {
+  const avg = sameWeekdayAverage(byDate, day.date);
+  if (avg == null || avg <= 0 || day.total < TREND_FLAG_MIN) return null;
+  const deviationPct = ((day.total - avg) / avg) * 100;
+  if (deviationPct >= TREND_FLAG_PCT) return "high";
+  if (deviationPct <= -TREND_FLAG_PCT) return "low";
+  return null;
+}
+
+// Compact horizontal pill selector — used for both the Site and Category
+// "tabs" so either can be optionally narrowed without a dropdown.
+function PillSelect<T extends { id: number; name: string }>({
+  label, options, value, onChange, allLabel,
+}: {
+  label: string; options: T[]; value: number | ""; onChange: (v: number | "") => void; allLabel: string;
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {[{ id: "" as const, name: allLabel }, ...options].map((opt) => {
+          const active = value === opt.id;
+          return (
+            <button
+              key={opt.id === "" ? "all" : opt.id}
+              onClick={() => onChange(opt.id)}
+              style={{
+                padding: "5px 12px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                background: active ? C.teal : "#fff", color: active ? "#fff" : C.ink,
+                border: `1px solid ${active ? C.teal : C.border}`,
+              }}
+            >
+              {opt.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TrendBadge({ flag }: { flag: "high" | "low" | null }) {
+  if (!flag) return null;
+  const up = flag === "high";
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 6, padding: "1px 6px", borderRadius: 5,
+      fontSize: 10.5, fontWeight: 700, background: up ? "#FBF0DD" : "#E8F0FE", color: up ? "#B9770E" : "#3B5FC4",
+    }}>
+      {up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+      {up ? "High" : "Low"}
+    </span>
+  );
+}
+
+const ALERT_TYPE_META: Record<"missed" | "spike" | "dip" | "gap", { label: string; bg: string; color: string; icon: typeof AlertTriangle }> = {
+  missed: { label: "Missed order?", bg: "#FDECEC", color: C.red, icon: PackageX },
+  spike: { label: "Spike / wastage?", bg: "#FBF0DD", color: "#B9770E", icon: TrendingUp },
+  dip: { label: "Under-ordered?", bg: "#E8F0FE", color: "#3B5FC4", icon: TrendingDown },
+  gap: { label: "No entry", bg: C.bg, color: C.sub, icon: CalendarX },
+};
+
+function AlertTypeBadge({ type }: { type: "missed" | "spike" | "dip" | "gap" }) {
+  const meta = ALERT_TYPE_META[type];
+  const Icon = meta.icon;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 5,
+      fontSize: 10.5, fontWeight: 700, background: meta.bg, color: meta.color, whiteSpace: "nowrap",
+    }}>
+      <Icon size={11} /> {meta.label}
+    </span>
+  );
+}
+
+function SummaryTab() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [data, setData] = useState<{
-    mealTypes: RotiMasterRef[];
-    summary: ReturnType<typeof computeRotiSummary>;
-    trend: { date: string; total: number }[];
-    dayCount: number;
-  } | null>(null);
+  const [siteId, setSiteId] = useState<number | "">("");
+  const [categoryId, setCategoryId] = useState<number | "">("");
+  const [data, setData] = useState<SummaryData | null>(null);
 
   useEffect(() => {
     const p = new URLSearchParams();
     if (from) p.set("from", from);
     if (to) p.set("to", to);
+    if (siteId) p.set("siteId", String(siteId));
+    if (categoryId) p.set("categoryId", String(categoryId));
     fetch(`/api/roti/summary?${p.toString()}`).then((r) => r.json()).then(setData);
-  }, [from, to]);
+  }, [from, to, siteId, categoryId]);
+
+  const selectedSiteName = siteId ? data?.sites.find((s) => s.id === siteId)?.name : null;
+  const selectedCategoryName = categoryId ? data?.categories.find((c) => c.id === categoryId)?.name : null;
+  const selectionLabel = [selectedCategoryName, selectedSiteName].filter(Boolean).join(" @ ") || "All Sites, All Categories";
+
+  // Derived from dailyBreakdown, which the API already scoped to BOTH the
+  // selected site and category — this is the one number set that reflects
+  // the current selection exactly.
+  const filtered = useMemo(() => {
+    const byMeal: Record<number, number> = {};
+    let grandTotal = 0;
+    for (const d of data?.dailyBreakdown ?? []) {
+      for (const [k, v] of Object.entries(d.byMeal)) byMeal[Number(k)] = (byMeal[Number(k)] ?? 0) + v;
+      grandTotal += d.total;
+    }
+    return { byMeal, grandTotal };
+  }, [data]);
+
+  const insights = useMemo(() => {
+    const days = data?.dailyBreakdown ?? [];
+    const nonZero = days.filter((d) => d.total > 0);
+    if (nonZero.length === 0) return null;
+    const peak = nonZero.reduce((a, b) => (b.total > a.total ? b : a));
+    const lowest = nonZero.reduce((a, b) => (b.total < a.total ? b : a));
+    const latest = days[days.length - 1];
+    const previous = days.length >= 2 ? days[days.length - 2] : null;
+    const changePct = previous && previous.total > 0 ? ((latest.total - previous.total) / previous.total) * 100 : null;
+    return { peak, lowest, latest, previous, changePct };
+  }, [data]);
+
+  const byDate = useMemo(() => new Map((data?.dailyBreakdown ?? []).map((d) => [d.date, d])), [data]);
+
+  // "Problems worth a look" — a sudden drop to zero against a real
+  // same-weekday average (possible missed order), a spike well above that
+  // weekday's trend (possible over-ordering / wastage), a dip well below it
+  // (possible under-ordering), or a date with no entry logged at all (a
+  // straight calendar gap, only checkable when both From and To are set).
+  const alerts = useMemo(() => {
+    if (!data) return [];
+    const days = data.dailyBreakdown;
+    const list: { date: string; type: "missed" | "spike" | "dip" | "gap"; detail: string }[] = [];
+
+    days.forEach((d) => {
+      const avg = sameWeekdayAverage(byDate, d.date);
+      if (avg == null || avg < TREND_FLAG_MIN) return;
+      const weekday = new Date(d.date + "T00:00:00Z").toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+      if (d.total === 0) {
+        list.push({ date: d.date, type: "missed", detail: `0 recorded vs a ${fmtNum(avg)} average for ${weekday}s` });
+      } else {
+        const pct = ((d.total - avg) / avg) * 100;
+        if (pct >= TREND_FLAG_PCT) list.push({ date: d.date, type: "spike", detail: `${fmtNum(d.total)}, +${pct.toFixed(0)}% vs ${weekday} average of ${fmtNum(avg)}` });
+        else if (pct <= -TREND_FLAG_PCT) list.push({ date: d.date, type: "dip", detail: `${fmtNum(d.total)}, ${pct.toFixed(0)}% vs ${weekday} average of ${fmtNum(avg)}` });
+      }
+    });
+
+    if (from && to) {
+      const present = new Set(days.map((d) => d.date));
+      const cursor = new Date(from + "T00:00:00Z");
+      const end = new Date(to + "T00:00:00Z");
+      while (cursor <= end) {
+        const key = cursor.toISOString().slice(0, 10);
+        if (!present.has(key)) list.push({ date: key, type: "gap", detail: "No entry logged for this date" });
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+    }
+
+    return list.sort((a, b) => a.date.localeCompare(b.date));
+  }, [data, from, to, byDate]);
 
   return (
     <div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end", marginBottom: 18 }}>
-        <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-        <Field label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start", marginBottom: 18 }}>
+        <div style={{ display: "flex", gap: 14 }}>
+          <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+          <Field label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+        </div>
+        {data && (
+          <>
+            <PillSelect label="Site" options={data.sites} value={siteId} onChange={setSiteId} allLabel="All Sites" />
+            <PillSelect label="Category" options={data.categories} value={categoryId} onChange={setCategoryId} allLabel="All Categories" />
+          </>
+        )}
       </div>
 
       {!data ? (
@@ -391,22 +587,139 @@ function SummaryTab({ mealTypes }: { mealTypes: RotiMasterRef[] }) {
         <Empty text="No entries for this filter yet." />
       ) : (
         <>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
+            {data.mealTypes.map((mt, i) => (
+              <StatCard
+                key={mt.id}
+                icon={Utensils}
+                tint={CHART_COLORS[i % CHART_COLORS.length]}
+                label={`Total ${mt.name}`}
+                value={fmtNum(filtered.byMeal[mt.id] ?? 0)}
+              />
+            ))}
+            <StatCard icon={Layers} tint={C.teal} label="Grand Total" value={fmtNum(filtered.grandTotal)} />
+            <StatCard icon={CalendarDays} tint={C.amber} label={`Daily Average (${data.dayCount} day${data.dayCount === 1 ? "" : "s"})`} value={fmtNum(filtered.grandTotal / data.dayCount)} />
+          </div>
+          <div style={{ color: C.sub, fontSize: 12, marginBottom: 20 }}>Showing: <strong style={{ color: C.ink }}>{selectionLabel}</strong></div>
+
           <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: "16px 18px", marginBottom: 20 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10 }}>Daily Grand Total Trend ({data.dayCount} day{data.dayCount === 1 ? "" : "s"})</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: alerts.length ? 10 : 0 }}>
+              <AlertTriangle size={15} color={alerts.length ? C.amber : C.green} />
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>
+                {alerts.length === 0 ? "No unusual patterns detected" : `${alerts.length} thing${alerts.length === 1 ? "" : "s"} worth a look — ${selectionLabel}`}
+              </div>
+            </div>
+            {alerts.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.sub }}>
+                No sudden drops to zero, spikes, dips (&gt;{TREND_FLAG_PCT}% off trailing average), or missing days found in this selection.
+              </div>
+            ) : (
+              <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+                {alerts.map((a, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 6, background: C.bg, fontSize: 12.5 }}>
+                    <AlertTypeBadge type={a.type} />
+                    <span style={{ fontWeight: 600, minWidth: 84 }}>{dateLabel(a.date)}</span>
+                    <span style={{ color: C.sub }}>{a.detail}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {insights && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 20 }}>
+              <div style={{ flex: "1 1 220px", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 6 }}>
+                  <TrendingUp size={13} color={C.green} /> Peak Day
+                </div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 20, fontWeight: 700, color: C.ink }}>{fmtNum(insights.peak.total)}</div>
+                <div style={{ fontSize: 12, color: C.sub }}>{dateLabel(insights.peak.date)}</div>
+              </div>
+              <div style={{ flex: "1 1 220px", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 6 }}>
+                  <TrendingDown size={13} color={C.red} /> Lowest Day
+                </div>
+                <div style={{ fontFamily: FONT_BODY, fontSize: 20, fontWeight: 700, color: C.ink }}>{fmtNum(insights.lowest.total)}</div>
+                <div style={{ fontSize: 12, color: C.sub }}>{dateLabel(insights.lowest.date)}</div>
+              </div>
+              {insights.previous && (
+                <div style={{ flex: "1 1 220px", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 6 }}>
+                    {insights.changePct != null && insights.changePct < 0 ? <ArrowDownRight size={13} color={C.red} /> : <ArrowUpRight size={13} color={C.green} />} Latest vs Previous Day
+                  </div>
+                  <div style={{ fontFamily: FONT_BODY, fontSize: 20, fontWeight: 700, color: C.ink }}>
+                    {fmtNum(insights.latest.total)}
+                    {insights.changePct != null && (
+                      <span style={{ fontSize: 13, fontWeight: 700, marginLeft: 8, color: insights.changePct < 0 ? C.red : C.green }}>
+                        {insights.changePct >= 0 ? "+" : ""}{insights.changePct.toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: C.sub }}>{dateLabel(insights.latest.date)} vs {dateLabel(insights.previous.date)} ({fmtNum(insights.previous.total)})</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: "16px 18px", marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10 }}>
+              Daily Trend — {selectionLabel} ({data.dayCount} day{data.dayCount === 1 ? "" : "s"})
+            </div>
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={data.trend}>
+              <LineChart data={data.dailyBreakdown}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
                 <XAxis dataKey="date" tick={{ fontSize: 10.5 }} tickFormatter={(v) => dateLabel(v)} />
                 <YAxis tick={{ fontSize: 10.5 }} />
                 <Tooltip labelFormatter={(v) => dateLabel(String(v))} formatter={(v) => fmtNum(Number(v))} />
-                <Line type="monotone" dataKey="total" stroke={CHART_COLORS[0]} strokeWidth={2} dot={false} />
+                <Legend wrapperStyle={{ fontSize: 11.5 }} />
+                {data.mealTypes.map((mt, i) => (
+                  <Line key={mt.id} type="monotone" dataKey={`byMeal.${mt.id}`} name={mt.name} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} dot={false} />
+                ))}
+                <Line type="monotone" dataKey="total" name="Total" stroke={C.ink} strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 4 }}>
+              Day-by-Day — {selectionLabel} (most recent first)
+            </div>
+            <div style={{ fontSize: 11.5, color: C.sub, marginBottom: 10 }}>
+              <TrendBadge flag="high" /> / <TrendBadge flag="low" /> marks a day &gt;{TREND_FLAG_PCT}% above/below the average for that same weekday (e.g. Sunday vs. recent Sundays) — so a normal weekly pattern isn&apos;t flagged as a problem.
+            </div>
+            <div style={{ maxHeight: "46vh", overflowY: "auto", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Date</Th>
+                    {data.categories.map((c) => <Th key={c.id}>{c.name}</Th>)}
+                    {data.mealTypes.map((mt) => <Th key={mt.id}>{mt.name} Total</Th>)}
+                    <Th>Day Total</Th>
+                    <Th>Remarks</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.dailyBreakdown
+                    .map((d) => ({ d, flag: trendFlag(byDate, d) }))
+                    .slice()
+                    .reverse()
+                    .map(({ d, flag }) => (
+                      <tr key={d.date}>
+                        <Td>{dateLabel(d.date)}</Td>
+                        {data.categories.map((c) => <Td key={c.id}>{fmtNum(d.byCategory[c.id] ?? 0)}</Td>)}
+                        {data.mealTypes.map((mt) => <Td key={mt.id}>{fmtNum(d.byMeal[mt.id] ?? 0)}</Td>)}
+                        <Td style={{ fontWeight: 700 }}>{fmtNum(d.total)}<TrendBadge flag={flag} /></Td>
+                        <Td>{d.remarks || <span style={{ color: C.faint }}>—</span>}</Td>
+                      </tr>
+                    ))}
+                </tbody>
+              </Table>
+            </div>
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10 }}>By Site — where demand is coming from</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10 }}>By Site — where demand is coming from{selectedCategoryName ? ` (${selectedCategoryName})` : ""}</div>
               <Table>
                 <thead>
                   <tr>
@@ -416,11 +729,11 @@ function SummaryTab({ mealTypes }: { mealTypes: RotiMasterRef[] }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.summary.perSite
+                  {data.perSite
                     .slice()
                     .sort((a, b) => b.total - a.total)
                     .map((s) => (
-                      <tr key={s.siteId}>
+                      <tr key={s.siteId} style={{ background: s.siteId === siteId ? C.tealSoft : undefined }}>
                         <Td>{s.siteName}</Td>
                         {data.mealTypes.map((mt) => <Td key={mt.id}>{fmtNum(s.byMeal[mt.id] ?? 0)}</Td>)}
                         <Td style={{ fontWeight: 700 }}>{fmtNum(s.total)}</Td>
@@ -431,7 +744,7 @@ function SummaryTab({ mealTypes }: { mealTypes: RotiMasterRef[] }) {
             </div>
 
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10 }}>By Category — what&apos;s being served</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10 }}>By Category — what&apos;s being served{selectedSiteName ? ` at ${selectedSiteName}` : ""}</div>
               <Table>
                 <thead>
                   <tr>
@@ -441,11 +754,11 @@ function SummaryTab({ mealTypes }: { mealTypes: RotiMasterRef[] }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.summary.perCategory
+                  {data.perCategory
                     .slice()
                     .sort((a, b) => b.total - a.total)
                     .map((c) => (
-                      <tr key={c.categoryId}>
+                      <tr key={c.categoryId} style={{ background: c.categoryId === categoryId ? C.tealSoft : undefined }}>
                         <Td>{c.categoryName}</Td>
                         {data.mealTypes.map((mt) => <Td key={mt.id}>{fmtNum(c.byMeal[mt.id] ?? 0)}</Td>)}
                         <Td style={{ fontWeight: 700 }}>{fmtNum(c.total)}</Td>
