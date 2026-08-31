@@ -739,6 +739,11 @@ function SummaryTab() {
                         <Td style={{ fontWeight: 700 }}>{fmtNum(s.total)}</Td>
                       </tr>
                     ))}
+                  <tr style={{ borderTop: `2px solid ${C.ink}`, background: C.bg, fontWeight: 700 }}>
+                    <Td>Total</Td>
+                    {data.mealTypes.map((mt) => <Td key={mt.id}>{fmtNum(data.perSite.reduce((s, x) => s + (x.byMeal[mt.id] ?? 0), 0))}</Td>)}
+                    <Td>{fmtNum(data.perSite.reduce((s, x) => s + x.total, 0))}</Td>
+                  </tr>
                 </tbody>
               </Table>
             </div>
@@ -764,6 +769,11 @@ function SummaryTab() {
                         <Td style={{ fontWeight: 700 }}>{fmtNum(c.total)}</Td>
                       </tr>
                     ))}
+                  <tr style={{ borderTop: `2px solid ${C.ink}`, background: C.bg, fontWeight: 700 }}>
+                    <Td>Total</Td>
+                    {data.mealTypes.map((mt) => <Td key={mt.id}>{fmtNum(data.perCategory.reduce((s, x) => s + (x.byMeal[mt.id] ?? 0), 0))}</Td>)}
+                    <Td>{fmtNum(data.perCategory.reduce((s, x) => s + x.total, 0))}</Td>
+                  </tr>
                 </tbody>
               </Table>
             </div>
