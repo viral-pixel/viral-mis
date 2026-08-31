@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Download, Upload, Settings2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Modal, ConfirmDelete } from "@/app/components/ui";
+import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Modal, ConfirmDelete, ClearDataModal } from "@/app/components/ui";
 import { C, FONT_BODY } from "@/app/lib/constants";
 import { IndianRupee, Scale, CalendarClock } from "lucide-react";
 
@@ -361,6 +361,7 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
   const [importedDraft, setImportedDraft] = useState<BillDraft | null>(null);
   const [presetVendorId, setPresetVendorId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
+  const [showClear, setShowClear] = useState(false);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -442,7 +443,17 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
           />
         </label>
         <Btn onClick={() => { setImportedDraft(null); setPresetVendorId(null); setShowBatchForm(true); }}><Plus size={15} /> Add Day&apos;s Purchase</Btn>
+        {isAdmin && <Btn variant="danger" onClick={() => setShowClear(true)}>Clear Data</Btn>}
       </div>
+
+      {showClear && (
+        <ClearDataModal
+          title="Clear Vegetable Purchases"
+          apiBase="/api/vegetable/purchases/clear"
+          onClose={() => setShowClear(false)}
+          onCleared={load}
+        />
+      )}
 
       {rows === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="No purchases for this filter yet." /> : (
         <Table>
@@ -768,6 +779,7 @@ function PotatoOnionTab({ vendors, isAdmin, onVendorAdded }: { vendors: Vendor[]
   const [rows, setRows] = useState<PotatoOnionRow[] | null>(null);
   const [editing, setEditing] = useState<PotatoOnionRow | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showClear, setShowClear] = useState(false);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -788,9 +800,19 @@ function PotatoOnionTab({ vendors, isAdmin, onVendorAdded }: { vendors: Vendor[]
     <div>
       <FilterRow from={from} to={to} onChange={(v) => { if (v.from !== undefined) setFrom(v.from); if (v.to !== undefined) setTo(v.to); }} />
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}>
         <Btn onClick={() => { setEditing(null); setShowForm(true); }}><Plus size={15} /> Add Entry</Btn>
+        {isAdmin && <Btn variant="danger" onClick={() => setShowClear(true)}>Clear Data</Btn>}
       </div>
+
+      {showClear && (
+        <ClearDataModal
+          title="Clear Potato & Onion Entries"
+          apiBase="/api/vegetable/potato-onion/clear"
+          onClose={() => setShowClear(false)}
+          onCleared={load}
+        />
+      )}
 
       {rows === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="No entries for this filter yet." /> : (
         <Table>
@@ -914,6 +936,7 @@ function CashTab({ isAdmin }: { isAdmin: boolean }) {
   const [rows, setRows] = useState<CashRow[] | null>(null);
   const [editing, setEditing] = useState<CashRow | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showClear, setShowClear] = useState(false);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -934,9 +957,19 @@ function CashTab({ isAdmin }: { isAdmin: boolean }) {
     <div>
       <FilterRow from={from} to={to} onChange={(v) => { if (v.from !== undefined) setFrom(v.from); if (v.to !== undefined) setTo(v.to); }} />
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}>
         <Btn onClick={() => { setEditing(null); setShowForm(true); }}><Plus size={15} /> Add Entry</Btn>
+        {isAdmin && <Btn variant="danger" onClick={() => setShowClear(true)}>Clear Data</Btn>}
       </div>
+
+      {showClear && (
+        <ClearDataModal
+          title="Clear Cash Purchases"
+          apiBase="/api/vegetable/cash/clear"
+          onClose={() => setShowClear(false)}
+          onCleared={load}
+        />
+      )}
 
       {rows === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="No entries for this filter yet." /> : (
         <Table>

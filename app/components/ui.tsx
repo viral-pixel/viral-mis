@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { X, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { C, FONT_HEAD, FONT_BODY, FONT_MONO } from "@/app/lib/constants";
 
@@ -297,5 +297,80 @@ export function Pager({
         <ChevronRight size={14} />
       </button>
     </div>
+  );
+}
+
+// Bulk-delete confirmation, shared across every table that gets a "Clear
+// Data" admin tool (test-data cleanup before going live). apiBase must be
+// an endpoint accepting GET (returns { count }) and DELETE (returns
+// { deleted }), both taking optional from/to=YYYY-MM query params — see
+// e.g. app/api/vegetable/purchases/clear/route.ts. Requires typing CLEAR
+// before the delete button enables, on top of the two-step nature of
+// opening this modal at all.
+export function ClearDataModal({
+  title, apiBase, onClose, onCleared,
+}: {
+  title: string; apiBase: string; onClose: () => void; onCleared: () => void;
+}) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [count, setCount] = useState<number | null>(null);
+  const [loadingCount, setLoadingCount] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [clearing, setClearing] = useState(false);
+
+  const qs = () => {
+    const p = new URLSearchParams();
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    return p.toString();
+  };
+
+  useEffect(() => {
+    setLoadingCount(true);
+    setCount(null);
+    fetch(`${apiBase}?${qs()}`)
+      .then((r) => r.json())
+      .then((d) => setCount(typeof d.count === "number" ? d.count : null))
+      .finally(() => setLoadingCount(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to]);
+
+  const doClear = async () => {
+    setClearing(true);
+    const res = await fetch(`${apiBase}?${qs()}`, { method: "DELETE" });
+    const d = await res.json().catch(() => ({}));
+    setClearing(false);
+    if (res.ok) {
+      alert(`Deleted ${d.deleted.toLocaleString("en-IN")} entr${d.deleted === 1 ? "y" : "ies"}.`);
+      onCleared();
+      onClose();
+    } else {
+      alert(d.error || "Could not clear data");
+    }
+  };
+
+  return (
+    <Modal title={title} onClose={onClose} width={460}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: C.sub, fontSize: 13 }}>Leave both blank to clear everything in this table. This cannot be undone.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <Field label="From (optional)"><Input type="month" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+          <Field label="To (optional)"><Input type="month" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+        </div>
+        <div style={{ background: "#FBF0DD", border: "1px solid #B9770E", borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, color: C.ink }}>
+          {loadingCount ? "Counting…" : count == null ? "Could not count — try again." : `This will permanently delete ${count.toLocaleString("en-IN")} entr${count === 1 ? "y" : "ies"}.`}
+        </div>
+        <Field label="Type CLEAR to confirm">
+          <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="CLEAR" />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn variant="danger" onClick={doClear} disabled={clearing || confirmText !== "CLEAR" || !count}>
+            {clearing ? "Deleting…" : "Delete Permanently"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }

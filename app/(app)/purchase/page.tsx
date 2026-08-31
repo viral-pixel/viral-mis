@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Download, Upload, Settings2 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Textarea, Modal, ConfirmDelete } from "@/app/components/ui";
+import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Textarea, Modal, ConfirmDelete, ClearDataModal } from "@/app/components/ui";
 import { C, FONT_BODY, CHART_COLORS } from "@/app/lib/constants";
 import { IndianRupee, Boxes, CalendarClock } from "lucide-react";
 
@@ -358,6 +358,7 @@ function EntriesTab({ groups, isAdmin }: { groups: PurchaseGroup[]; isAdmin: boo
   const [entries, setEntries] = useState<PurchaseEntryRow[] | null>(null);
   const [editing, setEditing] = useState<PurchaseEntryRow | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showClear, setShowClear] = useState(false);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -414,7 +415,17 @@ function EntriesTab({ groups, isAdmin }: { groups: PurchaseGroup[]; isAdmin: boo
         <Btn onClick={() => { setEditing(null); setShowForm(true); }}>
           <Plus size={15} /> Add Entry
         </Btn>
+        {isAdmin && <Btn variant="danger" onClick={() => setShowClear(true)}>Clear Data</Btn>}
       </div>
+
+      {showClear && (
+        <ClearDataModal
+          title="Clear Purchase Entries"
+          apiBase="/api/purchase/entries/clear"
+          onClose={() => setShowClear(false)}
+          onCleared={load}
+        />
+      )}
 
       {entries === null ? (
         <Empty text="Loading…" />
