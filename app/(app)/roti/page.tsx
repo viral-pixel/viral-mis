@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Settings2, Utensils, Layers, CalendarDays, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, AlertTriangle, CalendarX, PackageX } from "lucide-react";
+import { Plus, Settings2, Utensils, Layers, CalendarDays, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, AlertTriangle, CalendarX, PackageX, Upload, Download } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { SectionHead, Btn, Table, Th, Td, Empty, Field, Input, Textarea, Modal, ConfirmDelete, StatCard } from "@/app/components/ui";
 import { C, FONT_BODY, CHART_COLORS } from "@/app/lib/constants";
@@ -131,6 +131,24 @@ function EntriesTab({
     else alert("Could not delete");
   };
 
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
+  const importFile = async (file: File) => {
+    setImporting(true); setImportMsg("");
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/roti/import", { method: "POST", body: formData });
+    const d = await res.json().catch(() => ({}));
+    setImporting(false);
+    if (res.ok) {
+      setImportMsg(`Imported ${d.created} entr${d.created === 1 ? "y" : "ies"}.${d.errors?.length ? ` ${d.errors.length} row(s) skipped — see below.` : ""}`);
+      if (d.errors?.length) console.warn("Roti import errors:", d.errors);
+      load();
+    } else {
+      setImportMsg(d.error || "Import failed");
+    }
+  };
+
   const ready = sites.length > 0 && mealTypes.length > 0 && categories.length > 0;
 
   return (
@@ -139,10 +157,27 @@ function EntriesTab({
         <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
         <Field label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
         <div style={{ flex: 1 }} />
+        <a href={`/api/roti/export?${qs}`} style={{ textDecoration: "none" }}>
+          <Btn variant="ghost"><Download size={15} /> Export Excel{from || to ? " (filtered)" : ""}</Btn>
+        </a>
+        <label style={{ display: "inline-flex" }}>
+          <Btn variant="ghost" onClick={() => document.getElementById("roti-import-input")?.click()} disabled={importing}>
+            <Upload size={15} /> {importing ? "Importing…" : "Import Excel"}
+          </Btn>
+          <input
+            id="roti-import-input"
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: "none" }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ""; }}
+          />
+        </label>
         <Btn onClick={() => { setEditing(null); setShowForm(true); }} disabled={!ready}>
           <Plus size={15} /> Add Day Entry
         </Btn>
       </div>
+
+      {importMsg && <div style={{ color: C.sub, fontSize: 13, marginBottom: 14 }}>{importMsg}</div>}
 
       {!ready && days !== null && (
         <div style={{ color: C.sub, fontSize: 13, marginBottom: 14 }}>
