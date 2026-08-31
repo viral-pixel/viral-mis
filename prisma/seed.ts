@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { COMPLIANCE_SUBMODULE_SLUG } from "../app/lib/complianceEntities";
 import { PURCHASE_SUBMODULE_SLUG, PURCHASE_GROUPS, subItemsForGroup } from "../app/lib/purchaseGroups";
 import { VEGETABLE_SUBMODULE_SLUG, VEGETABLE_ITEMS } from "../app/lib/vegetableItems";
+import { ROTI_SUBMODULE_SLUG, ROTI_DEFAULT_SITES, ROTI_DEFAULT_MEAL_TYPES, ROTI_DEFAULT_CATEGORIES } from "../app/lib/rotiMeta";
 
 const prisma = new PrismaClient();
 
@@ -65,6 +66,44 @@ async function main() {
     });
   }
 
+  const kiranModule = await prisma.module.upsert({
+    where: { name: "Kiran Reports" },
+    update: {},
+    create: { name: "Kiran Reports" },
+  });
+
+  await prisma.subModule.upsert({
+    where: { slug: ROTI_SUBMODULE_SLUG },
+    update: {},
+    create: {
+      moduleId: kiranModule.id,
+      name: "Roti / Meal Count",
+      slug: ROTI_SUBMODULE_SLUG,
+    },
+  });
+
+  for (let i = 0; i < ROTI_DEFAULT_SITES.length; i++) {
+    await prisma.rotiSite.upsert({
+      where: { name: ROTI_DEFAULT_SITES[i] },
+      update: {},
+      create: { name: ROTI_DEFAULT_SITES[i], sortOrder: i },
+    });
+  }
+  for (let i = 0; i < ROTI_DEFAULT_MEAL_TYPES.length; i++) {
+    await prisma.rotiMealType.upsert({
+      where: { name: ROTI_DEFAULT_MEAL_TYPES[i] },
+      update: {},
+      create: { name: ROTI_DEFAULT_MEAL_TYPES[i], sortOrder: i },
+    });
+  }
+  for (let i = 0; i < ROTI_DEFAULT_CATEGORIES.length; i++) {
+    await prisma.rotiCategory.upsert({
+      where: { name: ROTI_DEFAULT_CATEGORIES[i] },
+      update: {},
+      create: { name: ROTI_DEFAULT_CATEGORIES[i], sortOrder: i },
+    });
+  }
+
   const existingAdmin = await prisma.user.findUnique({ where: { username: "admin" } });
   const adminPassword = existingAdmin ? null : randomPassword();
   const admin = await prisma.user.upsert({
@@ -97,14 +136,37 @@ async function main() {
     create: { userId: ketanUser.id, moduleId: ketanModule.id },
   });
 
+  const existingKiran = await prisma.user.findUnique({ where: { username: "kiran" } });
+  const kiranPassword = existingKiran ? null : randomPassword();
+  const kiranUser = await prisma.user.upsert({
+    where: { username: "kiran" },
+    update: {},
+    create: {
+      username: "kiran",
+      displayName: "Kiran Parmar",
+      isAdmin: false,
+      passwordHash: await bcrypt.hash(kiranPassword ?? "", 10),
+    },
+  });
+
+  await prisma.userModuleAccess.upsert({
+    where: { userId_moduleId: { userId: kiranUser.id, moduleId: kiranModule.id } },
+    update: {},
+    create: { userId: kiranUser.id, moduleId: kiranModule.id },
+  });
+
   console.log("Seed complete.");
   console.log("Module:", ketanModule.name, "| SubModules:", COMPLIANCE_SUBMODULE_SLUG, PURCHASE_SUBMODULE_SLUG, VEGETABLE_SUBMODULE_SLUG);
+  console.log("Module:", kiranModule.name, "| SubModules:", ROTI_SUBMODULE_SLUG);
   console.log(`Seeded ${PURCHASE_GROUPS.length} purchase costing groups.`);
   console.log(`Seeded ${VEGETABLE_ITEMS.length} vegetable/fruit master items.`);
+  console.log(`Seeded ${ROTI_DEFAULT_SITES.length} roti sites, ${ROTI_DEFAULT_MEAL_TYPES.length} meal types, ${ROTI_DEFAULT_CATEGORIES.length} categories.`);
   if (adminPassword) console.log(`New admin login -> username: admin  password: ${adminPassword}`);
   else console.log("admin user already existed, password unchanged");
   if (ketanPassword) console.log(`New ketan login -> username: ketan  password: ${ketanPassword}`);
   else console.log("ketan user already existed, password unchanged");
+  if (kiranPassword) console.log(`New kiran login -> username: kiran  password: ${kiranPassword}`);
+  else console.log("kiran user already existed, password unchanged");
   console.log(`admin id=${admin.id}`);
 }
 

@@ -31,8 +31,8 @@ model Module {
   name      String   @unique
   createdAt DateTime @default(now())
 
-  subModules   SubModule[]
-  userAccess   UserModuleAccess[]
+  subModules SubModule[]
+  userAccess UserModuleAccess[]
 }
 
 // Join table: which users can enter data / see the dashboard for which
@@ -40,7 +40,7 @@ model Module {
 // to more than one module). Admin users bypass this entirely (see full app
 // access regardless of rows here) — enforced in app/lib/authz.ts.
 model UserModuleAccess {
-  id       Int @id @default(autoincrement())
+  id       Int    @id @default(autoincrement())
   userId   Int
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   moduleId Int
@@ -88,8 +88,8 @@ model ClientAgreement {
   // overridable per record, e.g. a closed site that still needs one follow-up.
   needsReminder Boolean @default(true)
 
-  enteredBy   String @default("")
-  importBatch String @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -113,8 +113,8 @@ model FoodLicense {
   // overridable per record, e.g. a closed site that still needs one follow-up.
   needsReminder Boolean @default(true)
 
-  enteredBy   String @default("")
-  importBatch String @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -139,8 +139,8 @@ model WcPolicy {
   // overridable per record, e.g. a closed site that still needs one follow-up.
   needsReminder Boolean @default(true)
 
-  enteredBy   String @default("")
-  importBatch String @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -166,8 +166,8 @@ model LabourLicense {
   // overridable per record, e.g. a closed site that still needs one follow-up.
   needsReminder Boolean @default(true)
 
-  enteredBy   String @default("")
-  importBatch String @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -178,7 +178,7 @@ model LabourLicense {
 // Fitness — each tracked and reminded on separately, since they renew on
 // different cycles.
 model VehicleAgreement {
-  id     Int    @id @default(autoincrement())
+  id          Int    @id @default(autoincrement())
   vehicleNo   String
   vehicleType String @default("")
   location    String @default("")
@@ -193,9 +193,9 @@ model VehicleAgreement {
   fitnessEnd     DateTime?
 
   registrationDate DateTime?
-  usedFor          String @default("")
-  ownerName        String @default("")
-  active           String @default("Active") // Active / Close, as recorded in the source sheet
+  usedFor          String    @default("")
+  ownerName        String    @default("")
+  active           String    @default("Active") // Active / Close, as recorded in the source sheet
 
   // Whether this record should appear in the reminders feed / dashboard
   // expiry stats. Defaults to true but is auto-suggested off in the UI when
@@ -204,23 +204,23 @@ model VehicleAgreement {
   // overridable per record, e.g. a closed site that still needs one follow-up.
   needsReminder Boolean @default(true)
 
-  enteredBy   String @default("")
-  importBatch String @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
 model FireInsurance {
-  id             Int       @id @default(autoincrement())
-  premises       String
-  address        String    @default("")
-  company        String    @default("")
-  policyAmount   Float?
-  insuredAmount  Float?
+  id               Int       @id @default(autoincrement())
+  premises         String
+  address          String    @default("")
+  company          String    @default("")
+  policyAmount     Float?
+  insuredAmount    Float?
   commencementDate DateTime?
   validTill        DateTime?
-  insuredFor       String  @default("")
-  remarks          String  @default("") // also carries Active/Close status in the source sheet
+  insuredFor       String    @default("")
+  remarks          String    @default("") // also carries Active/Close status in the source sheet
 
   // Whether this record should appear in the reminders feed / dashboard
   // expiry stats. Defaults to true but is auto-suggested off in the UI when
@@ -229,8 +229,8 @@ model FireInsurance {
   // overridable per record, e.g. a closed site that still needs one follow-up.
   needsReminder Boolean @default(true)
 
-  enteredBy   String @default("")
-  importBatch String @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -256,8 +256,8 @@ model PartnerInsurance {
   // overridable per record, e.g. a closed site that still needs one follow-up.
   needsReminder Boolean @default(true)
 
-  enteredBy   String @default("")
-  importBatch String @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -308,21 +308,21 @@ model PurchaseGroup {
 // kitchen hands its own bottles to a vendor, that entry's amount/quantity
 // are SUBTRACTED from the group's monthly total instead of added.
 model PurchaseEntry {
-  id      Int           @id @default(autoincrement())
-  month   DateTime      // normalized to the 1st of the month
-  groupId Int
-  group   PurchaseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  amount    Float?
-  quantity  Float?
-  isDeduction Boolean @default(false)
+  id          Int           @id @default(autoincrement())
+  month       DateTime // normalized to the 1st of the month
+  groupId     Int
+  group       PurchaseGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  amount      Float?
+  quantity    Float?
+  isDeduction Boolean       @default(false)
   // Which physical item this entry is for, when the group combines several
   // (e.g. "Roti" within the Roti/Paratha/Poori/Thepla group). Blank for
   // groups that don't combine anything (Oil, Rice, Sugar, ...) — there's
   // nothing to distinguish. Matched against PurchaseGroupDef.subItems in
   // app/lib/purchaseGroups.ts, not a separate table, since the list is
   // small and fixed per group.
-  subItem String @default("")
-  remarks String @default("") // vendor/brand note, e.g. "Vendor X", "Bottles given to ABC Caterers"
+  subItem     String        @default("")
+  remarks     String        @default("") // vendor/brand note, e.g. "Vendor X", "Bottles given to ABC Caterers"
 
   enteredBy   String   @default("")
   importBatch String   @default("")
@@ -354,8 +354,8 @@ model RentAgreement {
   // overridable per record, e.g. a closed site that still needs one follow-up.
   needsReminder Boolean @default(true)
 
-  enteredBy   String @default("")
-  importBatch String @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -476,4 +476,71 @@ model MonthlyMealCount {
   countLD   Int
   enteredBy String   @default("")
   updatedAt DateTime @updatedAt
+}
+
+// ---- SubModule: "Roti / Meal Count" (Kiran Parmar) ----
+// Daily count of Roti/Paratha/Poori/Thepla served, per site, per meal.
+// Source: a wide per-day Excel sheet (one row per date, one column per
+// site×meal×category) — normalized here into one line item per (day, site,
+// meal, category) so sites/meals/categories can be added or removed later
+// without a schema change (per the user's explicit "give option to add/
+// delete" request for all three masters). The per-site and per-category
+// totals the source sheet computed via formulas are NOT stored — they're
+// derived live from RotiLineItem (app/lib/rotiSummary.ts) so they can never
+// drift out of sync with the raw entries the way copy-pasted Excel formulas
+// could.
+model RotiSite {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  lines RotiLineItem[]
+}
+
+model RotiMealType {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // Lunch / Dinner
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  lines RotiLineItem[]
+}
+
+model RotiCategory {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // Roti / Paratha / Poori / Thepla
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  lines RotiLineItem[]
+}
+
+// One row per day. `remarks` matches the single free-text Remark column in
+// the source sheet (one note per day, not per site).
+model RotiDayEntry {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique
+  remarks   String   @default("")
+  enteredBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines RotiLineItem[]
+}
+
+model RotiLineItem {
+  id         Int          @id @default(autoincrement())
+  dayEntryId Int
+  dayEntry   RotiDayEntry @relation(fields: [dayEntryId], references: [id], onDelete: Cascade)
+  siteId     Int
+  site       RotiSite     @relation(fields: [siteId], references: [id])
+  mealTypeId Int
+  mealType   RotiMealType @relation(fields: [mealTypeId], references: [id])
+  categoryId Int
+  category   RotiCategory @relation(fields: [categoryId], references: [id])
+  quantity   Float
+
+  @@unique([dayEntryId, siteId, mealTypeId, categoryId])
+  @@index([dayEntryId])
 }
