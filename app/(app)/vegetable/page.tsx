@@ -27,6 +27,7 @@ interface BillDraftLine { particulars: string; quantity: number; rate: number; a
 interface BillDraft {
   date: string | null; invoiceNo: string | null; vendorId: number | null; vendorName: string;
   printedTotal: number | null; sumOfLines: number; totalMismatch: boolean; lines: BillDraftLine[]; unmatchedCount: number;
+  skippedCount?: number;
 }
 
 const CASH_CATEGORIES = ["Fruit & Cash Purchase", "Onion & Garlic Flakes"];
@@ -511,23 +512,39 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
           />
         </label>
         <label style={{ display: "inline-flex" }}>
-          <Btn variant="ghost" onClick={() => document.getElementById("milan-bill-input")?.click()}>
-            <Upload size={15} /> Import Milan Veg Bill
+          <Btn variant="ghost" disabled={importing} onClick={() => document.getElementById("milan-bill-input")?.click()}>
+            <Upload size={15} /> {importing ? "Reading bill…" : "Import Milan Veg Bill (PDF)"}
           </Btn>
-          {/* Milan Vegetable Co. (Jakir) bills are handwritten — there's no
-              working parser for them, so this doesn't read the file at all.
-              It's a shortcut that jumps straight into the manual entry grid
-              with the vendor pre-selected, so picking a photo/scan here just
-              opens the form for Ketan to enter numbers by hand. */}
+          {/* Milan Vegetable Co.'s slip is pre-printed with Sr.No/item, and
+              their staff fill Weight/Rate/Amount by hand — a plain scan has
+              no text layer, so it can't be read automatically. But the
+              "typed figures" variant (those three numbers typed into the
+              PDF, not just handwritten) CAN be read deterministically, since
+              the pre-printed grid's row position is exact arithmetic from
+              the Sr.No — see milanBillParser.ts. A plain scan still falls
+              back to the manual-entry grid below. */}
           <input
-            id="milan-bill-input" type="file" accept="application/pdf,image/*" style={{ display: "none" }}
-            onChange={(e) => {
-              if (!e.target.files?.[0]) return;
+            id="milan-bill-input" type="file" accept="application/pdf" style={{ display: "none" }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setImporting(true);
+              const fd = new FormData();
+              fd.append("file", file);
+              const res = await fetch("/api/vegetable/purchases/import-milan-bill", { method: "POST", body: fd });
+              const d = await res.json().catch(() => ({}));
+              setImporting(false);
               e.target.value = "";
-              setImportedDraft(null);
-              const jakir = vendors.find((v) => v.name.toLowerCase() === "jakir");
-              setPresetVendorId(jakir?.id ?? null);
-              setShowBatchForm(true);
+              if (res.ok) { setImportedDraft(d); setShowBatchForm(true); }
+              else {
+                // No typed figures found (plain scan) — fall back to the
+                // manual-entry grid with the vendor pre-selected, same as
+                // the old behavior, instead of a dead-end error.
+                const jakir = vendors.find((v) => v.name.toLowerCase() === "jakir");
+                setImportedDraft(null);
+                setPresetVendorId(jakir?.id ?? null);
+                setShowBatchForm(true);
+              }
             }}
           />
         </label>
@@ -703,12 +720,18 @@ function BatchPurchaseForm({
               Imported from {initialDraft.vendorName}{initialDraft.invoiceNo ? ` invoice ${initialDraft.invoiceNo}` : ""} — nothing is saved yet, review below then click Save All.
             </div>
             <div style={{ color: C.sub }}>
-              Bill total: {fmtMoney(initialDraft.printedTotal ?? 0)} · Read from bill: {fmtMoney(initialDraft.sumOfLines)}
+              {initialDraft.printedTotal != null && <>Bill total: {fmtMoney(initialDraft.printedTotal)} · </>}
+              Read from bill: {fmtMoney(initialDraft.sumOfLines)}
               {initialDraft.totalMismatch && <span style={{ color: C.red, fontWeight: 600 }}> — totals don&apos;t match, please double-check every line</span>}
             </div>
             {unmatchedLines.length > 0 && (
               <div style={{ color: C.red, marginTop: 6 }}>
                 {unmatchedLines.length} item(s) on the bill could not be matched to a known item and were NOT pre-filled — add them manually below: {unmatchedLines.map((l) => `"${l.particulars}" (${l.quantity} @ ₹${l.rate})`).join(", ")}
+              </div>
+            )}
+            {!!initialDraft.skippedCount && (
+              <div style={{ color: C.red, marginTop: 6 }}>
+                {initialDraft.skippedCount} figure(s) on the bill were typed but couldn&apos;t be placed with confidence and were left out — please check the original bill for any row not showing below.
               </div>
             )}
           </div>
