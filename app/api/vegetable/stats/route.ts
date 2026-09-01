@@ -3,7 +3,7 @@ import { prisma } from "@/app/lib/prisma";
 import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
 import { VEGETABLE_SUBMODULE_SLUG } from "@/app/lib/vegetableItems";
 import {
-  collectMonthlyOverview, collectCombinedMonthlyTotal, collectVendorComparison, collectItemTrend,
+  collectMonthlyOverview, collectCombinedMonthlyTotal, collectVendorComparison, collectItemTrend, collectDailyVendorEntries,
 } from "@/app/lib/vegetableAnalytics";
 
 export async function GET(req: NextRequest) {
@@ -21,6 +21,13 @@ export async function GET(req: NextRequest) {
   if (p.get("distinctProduceItems")) {
     const rows = await prisma.potatoOnionEntry.findMany({ distinct: ["item"], select: { item: true } });
     return NextResponse.json({ items: rows.map((r) => r.item).filter(Boolean).sort() });
+  }
+
+  // Day-precision (unlike every other mode here, which is month-precision) —
+  // powers the "Daily Vendor Entries" pivot on the Overview tab.
+  if (p.get("dailyByVendor")) {
+    if (!from || !to) return NextResponse.json({ error: "from and to (YYYY-MM-DD) are required" }, { status: 400 });
+    return NextResponse.json({ rows: await collectDailyVendorEntries({ from, to }) });
   }
 
   if (p.get("combined")) {

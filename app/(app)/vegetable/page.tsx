@@ -22,6 +22,7 @@ interface OverviewRow {
 }
 interface VendorCompRow { itemId: number; itemName: string; srNo: number; vendorId: number; vendorName: string; totalQty: number; totalAmount: number; avgRate: number }
 interface ItemTrendRow { date: string; vendorName: string; quantity: number; rate: number; amount: number }
+interface DailyVendorRow { date: string; totalQty: number; totalAmount: number; byVendor: Record<number, { qty: number; amount: number }> }
 interface BillDraftLine { particulars: string; quantity: number; rate: number; amount: number; itemId: number | null; itemName: string | null }
 interface BillDraft {
   date: string | null; invoiceNo: string | null; vendorId: number | null; vendorName: string;
@@ -119,7 +120,7 @@ export default function VegetablePage() {
         ))}
       </div>
 
-      {tab === "overview" && <OverviewTab items={items} />}
+      {tab === "overview" && <OverviewTab items={items} vendors={vendors} onVendorAdded={loadMasters} />}
       {tab === "purchases" && <PurchasesTab items={items} vendors={vendors} isAdmin={isAdmin} onVendorAdded={loadMasters} />}
       {tab === "potatoOnion" && <PotatoOnionTab vendors={vendors} isAdmin={isAdmin} onVendorAdded={loadMasters} />}
       {tab === "cash" && <CashTab isAdmin={isAdmin} />}
@@ -142,7 +143,7 @@ function ChartPanel({ title, sub, action, children, style }: { title: string; su
   );
 }
 
-function OverviewTab({ items }: { items: VegItem[] }) {
+function OverviewTab({ items, vendors, onVendorAdded }: { items: VegItem[]; vendors: Vendor[]; onVendorAdded: () => void }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [category, setCategory] = useState<string>("main");
@@ -155,6 +156,18 @@ function OverviewTab({ items }: { items: VegItem[] }) {
 
   const [trendItemId, setTrendItemId] = useState<number | null>(null);
   const [trendRows, setTrendRows] = useState<ItemTrendRow[] | null>(null);
+
+  const [dailyFrom, setDailyFrom] = useState("");
+  const [dailyTo, setDailyTo] = useState("");
+  const [dailyRows, setDailyRows] = useState<DailyVendorRow[] | null>(null);
+  const [dailyCell, setDailyCell] = useState<{ date: string; vendorId: number } | null>(null);
+
+  const loadDaily = () => {
+    if (!dailyFrom || !dailyTo) { setDailyRows(null); return; }
+    setDailyRows(null);
+    fetch(`/api/vegetable/stats?dailyByVendor=1&from=${dailyFrom}&to=${dailyTo}`).then((r) => r.json()).then((d) => setDailyRows(d.rows ?? []));
+  };
+  useEffect(loadDaily, [dailyFrom, dailyTo]);
 
   useEffect(() => {
     fetch("/api/vegetable/stats?distinctProduceItems=1").then((r) => r.json()).then((d) => setProduceItems(d.items ?? []));
@@ -226,6 +239,82 @@ function OverviewTab({ items }: { items: VegItem[] }) {
             </BarChart>
           </ResponsiveContainer>
         </ChartPanel>
+      )}
+
+      <ChartPanel
+        title="Daily Vendor Entries"
+        sub="Pick a date range to see each day's purchases by vendor — click any amount to review, edit, or delete that day's entries; click + add to enter a new one"
+        action={
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Field label="From date">
+              <Input type="date" value={dailyFrom} onChange={(e) => setDailyFrom(e.target.value)} style={{ width: 150 }} />
+            </Field>
+            <Field label="To date">
+              <Input type="date" value={dailyTo} onChange={(e) => setDailyTo(e.target.value)} style={{ width: 150 }} />
+            </Field>
+          </div>
+        }
+        style={{ marginBottom: 22 }}
+      >
+        {!dailyFrom || !dailyTo ? (
+          <Empty text="Pick a From and To date to see day-wise, vendor-wise entries." />
+        ) : !dailyRows ? (
+          <Empty text="Loading…" />
+        ) : dailyRows.length === 0 ? (
+          <Empty text="No purchases recorded in this range." />
+        ) : (
+          <div style={{ maxHeight: 420, overflow: "auto", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <th style={{ textAlign: "left", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11, position: "sticky", left: 0, background: "#fff" }}>DATE</th>
+                  {vendors.map((v) => (
+                    <th key={v.id} style={{ textAlign: "right", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11, minWidth: 100 }}>{v.name.toUpperCase()}</th>
+                  ))}
+                  <th style={{ textAlign: "right", padding: "8px 10px", color: C.ink, fontWeight: 700, fontSize: 11 }}>DAY TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyRows.map((row) => (
+                  <tr key={row.date} style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={{ padding: "6px 10px", fontWeight: 600, position: "sticky", left: 0, background: "#fff" }}>{fmtDate(row.date)}</td>
+                    {vendors.map((v) => {
+                      const cell = row.byVendor[v.id];
+                      return (
+                        <td key={v.id} style={{ padding: "6px 10px", textAlign: "right" }}>
+                          <button
+                            onClick={() => setDailyCell({ date: row.date, vendorId: v.id })}
+                            style={{
+                              background: "none", border: "none", cursor: "pointer", padding: 0,
+                              color: cell ? C.teal : C.faint, fontWeight: cell ? 600 : 400, fontFamily: FONT_BODY, fontSize: 12.5,
+                            }}
+                            title={cell ? `Review/edit ${v.name}'s entries for ${fmtDate(row.date)}` : `Add a ${v.name} entry for ${fmtDate(row.date)}`}
+                          >
+                            {cell ? fmtMoney(cell.amount) : "+ add"}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>{fmtMoney(row.totalAmount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ChartPanel>
+
+      {dailyCell && (
+        <BatchPurchaseForm
+          items={items}
+          vendors={vendors}
+          initialDraft={null}
+          presetVendorId={dailyCell.vendorId}
+          presetDate={dailyCell.date}
+          onClose={() => setDailyCell(null)}
+          onSaved={() => { setDailyCell(null); loadDaily(); }}
+          onVendorAdded={onVendorAdded}
+        />
       )}
 
       <ChartPanel
@@ -496,12 +585,12 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
 // date+vendor preloads whatever was already saved (highlighted rows) so
 // entries can be extended or corrected without creating duplicates.
 function BatchPurchaseForm({
-  items, vendors, initialDraft, presetVendorId, onClose, onSaved, onVendorAdded,
+  items, vendors, initialDraft, presetVendorId, presetDate, onClose, onSaved, onVendorAdded,
 }: {
-  items: VegItem[]; vendors: Vendor[]; initialDraft?: BillDraft | null; presetVendorId?: number | null;
+  items: VegItem[]; vendors: Vendor[]; initialDraft?: BillDraft | null; presetVendorId?: number | null; presetDate?: string | null;
   onClose: () => void; onSaved: () => void; onVendorAdded: () => void;
 }) {
-  const [date, setDate] = useState(() => initialDraft?.date ?? new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => initialDraft?.date ?? presetDate ?? new Date().toISOString().slice(0, 10));
   const [vendorId, setVendorId] = useState<number | "">(initialDraft?.vendorId ?? presetVendorId ?? "");
   const [newVendor, setNewVendor] = useState("");
   const [search, setSearch] = useState("");
@@ -645,6 +734,7 @@ function BatchPurchaseForm({
                       <th style={{ textAlign: "left", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11.5, width: 110 }}>QTY (KG)</th>
                       <th style={{ textAlign: "left", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11.5, width: 110 }}>RATE (₹)</th>
                       <th style={{ textAlign: "right", padding: "8px 10px", color: C.sub, fontWeight: 600, fontSize: 11.5, width: 100 }}>AMOUNT</th>
+                      <th style={{ width: 36 }} />
                     </tr>
                   </thead>
                   <tbody>
@@ -672,6 +762,20 @@ function BatchPurchaseForm({
                             />
                           </td>
                           <td style={{ padding: "5px 10px", textAlign: "right", color: C.sub }}>{amt != null ? fmtMoney(amt) : "—"}</td>
+                          <td style={{ padding: "5px 6px", textAlign: "center" }}>
+                            {hasExisting && (
+                              <ConfirmDelete
+                                onConfirm={async () => {
+                                  await fetch(`/api/vegetable/purchases/${line.entryId}`, { method: "DELETE" });
+                                  setLines((prev) => {
+                                    const next = { ...prev };
+                                    delete next[item.id];
+                                    return next;
+                                  });
+                                }}
+                              />
+                            )}
+                          </td>
                         </tr>
                       );
                     })}

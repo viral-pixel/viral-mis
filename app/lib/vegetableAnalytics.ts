@@ -208,3 +208,45 @@ export async function collectItemTrend(itemId: number, range?: DateRange): Promi
     amount: Math.round(e.amount),
   }));
 }
+
+export interface DailyVendorRow {
+  date: string; // "YYYY-MM-DD"
+  totalQty: number;
+  totalAmount: number;
+  byVendor: Record<number, { qty: number; amount: number }>;
+}
+
+// Day-by-day, vendor-by-vendor pivot for Ketan's "what did I enter on which
+// day, from which vendor" view. Day-precision from/to (unlike every other
+// function in this file, which works in month-precision) — only dates with
+// at least one purchase are returned, so a long range doesn't render a wall
+// of empty rows.
+export async function collectDailyVendorEntries(range: { from: string; to: string }): Promise<DailyVendorRow[]> {
+  const entries = await prisma.vegetablePurchaseEntry.findMany({
+    where: {
+      date: {
+        gte: new Date(`${range.from}T00:00:00.000Z`),
+        lt: new Date(new Date(`${range.to}T00:00:00.000Z`).getTime() + 24 * 60 * 60 * 1000),
+      },
+    },
+    select: { date: true, vendorId: true, quantity: true, amount: true },
+  });
+
+  const byDate = new Map<string, DailyVendorRow>();
+  for (const e of entries) {
+    const dateKey = e.date.toISOString().slice(0, 10);
+    let row = byDate.get(dateKey);
+    if (!row) {
+      row = { date: dateKey, totalQty: 0, totalAmount: 0, byVendor: {} };
+      byDate.set(dateKey, row);
+    }
+    row.totalQty += e.quantity;
+    row.totalAmount += e.amount;
+    const v = row.byVendor[e.vendorId] ?? { qty: 0, amount: 0 };
+    v.qty += e.quantity;
+    v.amount += e.amount;
+    row.byVendor[e.vendorId] = v;
+  }
+
+  return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
