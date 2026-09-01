@@ -8,7 +8,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!auth.ok) return auth.response;
   const { id } = await params;
 
-  const { date, itemId, vendorId, quantity, rate } = await req.json();
+  const { date, itemId, vendorId, quantity, rate, remarks } = await req.json();
   const qty = Number(quantity);
   const rt = Number(rate);
   if (isNaN(qty) || isNaN(rt)) return NextResponse.json({ error: "Quantity and Rate must be numbers" }, { status: 400 });
@@ -22,6 +22,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       quantity: qty,
       rate: rt,
       amount: qty * rt,
+      remarks: remarks ?? "",
     },
   });
   return NextResponse.json(entry);

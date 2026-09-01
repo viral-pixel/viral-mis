@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireModuleAccessBySubModuleSlug(VEGETABLE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
-  const { date, itemId, vendorId, quantity, rate } = await req.json();
+  const { date, itemId, vendorId, quantity, rate, remarks } = await req.json();
   if (!date || !itemId || !vendorId || quantity === undefined || rate === undefined) {
     return NextResponse.json({ error: "Date, Item, Vendor, Quantity and Rate are required" }, { status: 400 });
   }
@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
       quantity: qty,
       rate: rt,
       amount: qty * rt,
+      remarks: remarks ?? "",
       enteredBy: auth.session.username ?? "",
     },
   });

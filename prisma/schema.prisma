@@ -409,6 +409,7 @@ model VegetablePurchaseEntry {
   quantity Float // Kg (or the item's natural unit — the source doesn't vary units per item)
   rate     Float
   amount   Float // = quantity * rate, computed at write time, never typed directly
+  remarks  String          @default("") // e.g. quality issue, a debit applied against this line — entered once per day+vendor batch, same value copied onto every line saved together
 
   enteredBy   String   @default("")
   importBatch String   @default("")

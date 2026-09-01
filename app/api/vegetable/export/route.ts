@@ -17,8 +17,8 @@ export async function GET() {
   const buffer = buildMultiSheetXlsxBuffer([
     {
       name: "Vegetable Purchases",
-      headers: ["Date", "Item", "Vendor", "Quantity", "Rate", "Amount"],
-      rows: purchases.map((e) => [e.date.toISOString().slice(0, 10), e.item.name, e.vendor.name, e.quantity, e.rate, Math.round(e.amount)]),
+      headers: ["Date", "Item", "Vendor", "Quantity", "Rate", "Amount", "Remarks"],
+      rows: purchases.map((e) => [e.date.toISOString().slice(0, 10), e.item.name, e.vendor.name, e.quantity, e.rate, Math.round(e.amount), e.remarks]),
     },
     {
       name: "Potato Onion Garlic",

@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     const keys = Object.keys(purchaseRows[0]);
     const find = (label: string) => keys.find((k) => norm(k) === norm(label));
-    const dateKey = find("Date"), itemKey = find("Item"), vendorKey = find("Vendor"), qtyKey = find("Quantity"), rateKey = find("Rate");
+    const dateKey = find("Date"), itemKey = find("Item"), vendorKey = find("Vendor"), qtyKey = find("Quantity"), rateKey = find("Rate"), remarksKey = find("Remarks");
 
     for (let i = 0; i < purchaseRows.length; i++) {
       const row = purchaseRows[i];
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
       try {
         await prisma.vegetablePurchaseEntry.create({
-          data: { date, itemId: item.id, vendorId: vendor.id, quantity: qty, rate, amount: qty * rate, enteredBy, importBatch },
+          data: { date, itemId: item.id, vendorId: vendor.id, quantity: qty, rate, amount: qty * rate, remarks: remarksKey ? String(row[remarksKey] ?? "").trim() : "", enteredBy, importBatch },
         });
         created++;
       } catch (e) {

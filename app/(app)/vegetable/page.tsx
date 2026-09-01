@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Download, Upload, Settings2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Modal, ConfirmDelete, ClearDataModal } from "@/app/components/ui";
+import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Textarea, Modal, ConfirmDelete, ClearDataModal } from "@/app/components/ui";
 import { C, FONT_BODY } from "@/app/lib/constants";
 import { IndianRupee, Scale, CalendarClock } from "lucide-react";
 
 interface VegItem { id: number; srNo: number; name: string }
 interface Vendor { id: number; name: string }
-interface PurchaseRow { id: number; date: string; itemId: number; item: VegItem; vendorId: number; vendor: Vendor; quantity: number; rate: number; amount: number }
+interface PurchaseRow { id: number; date: string; itemId: number; item: VegItem; vendorId: number; vendor: Vendor; quantity: number; rate: number; amount: number; remarks: string }
 interface PotatoOnionRow {
   id: number; billNo: string; billDate: string | null; materialReceivedDate: string;
   vendorId: number | null; vendor: Vendor | null; source: string; item: string;
@@ -457,11 +457,12 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
 
       {rows === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="No purchases for this filter yet." /> : (
         <Table>
-          <thead><tr><Th>Date</Th><Th>Item</Th><Th>Vendor</Th><Th>Qty (Kg)</Th><Th>Rate</Th><Th>Amount</Th><Th /></tr></thead>
+          <thead><tr><Th>Date</Th><Th>Item</Th><Th>Vendor</Th><Th>Qty (Kg)</Th><Th>Rate</Th><Th>Amount</Th><Th>Remarks</Th><Th /></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
                 <Td>{fmtDate(r.date)}</Td><Td>{r.item.name}</Td><Td>{r.vendor.name}</Td><Td>{r.quantity}</Td><Td>₹{r.rate}</Td><Td>{fmtMoney(r.amount)}</Td>
+                <Td>{r.remarks || <span style={{ color: C.faint }}>—</span>}</Td>
                 <Td>
                   <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                     <button onClick={() => { setEditing(r); setShowForm(true); }} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Edit</button>
@@ -506,6 +507,7 @@ function BatchPurchaseForm({
   const [search, setSearch] = useState("");
   const [newItemName, setNewItemName] = useState("");
   const [lines, setLines] = useState<Record<number, { entryId: number | null; quantity: string; rate: string }>>({});
+  const [remarks, setRemarks] = useState("");
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -530,7 +532,7 @@ function BatchPurchaseForm({
   };
 
   useEffect(() => {
-    if (!date || !vendorId) { setLines({}); return; }
+    if (!date || !vendorId) { setLines({}); setRemarks(""); return; }
     setLoadingExisting(true);
     fetch(`/api/vegetable/purchases?vendorId=${vendorId}&date=${date}`)
       .then((r) => r.json())
@@ -548,6 +550,10 @@ function BatchPurchaseForm({
           }
         }
         setLines(map);
+        // One Remarks value per day+vendor batch — every saved line for
+        // this date/vendor should already carry the same text, so the
+        // first non-empty one found is the batch's remarks.
+        setRemarks(rows.find((r) => r.remarks)?.remarks ?? "");
         setLoadingExisting(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -579,12 +585,12 @@ function BatchPurchaseForm({
       if (line.entryId) {
         jobs.push(fetch(`/api/vegetable/purchases/${line.entryId}`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date, itemId: item.id, vendorId, quantity: q, rate: r }),
+          body: JSON.stringify({ date, itemId: item.id, vendorId, quantity: q, rate: r, remarks }),
         }));
       } else {
         jobs.push(fetch("/api/vegetable/purchases", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date, itemId: item.id, vendorId, quantity: q, rate: r }),
+          body: JSON.stringify({ date, itemId: item.id, vendorId, quantity: q, rate: r, remarks }),
         }));
       }
     }
@@ -682,6 +688,10 @@ function BatchPurchaseForm({
           <div style={{ color: C.sub, fontSize: 13, padding: "10px 0" }}>Pick a date and vendor to start entering items.</div>
         )}
 
+        <Field label="Remarks (optional — e.g. quality issue, a debit applied)">
+          <Textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Applies to this whole day's purchase from this vendor" />
+        </Field>
+
         <div style={{ display: "flex", gap: 8 }}>
           <Input value={newVendor} onChange={(e) => setNewVendor(e.target.value)} placeholder="New vendor name" style={{ flex: 1 }} />
           <Btn type="button" variant="ghost" onClick={addVendor}>Add Vendor</Btn>
@@ -712,6 +722,7 @@ function PurchaseForm({
   const [vendorId, setVendorId] = useState<number | "">(initial?.vendorId ?? "");
   const [quantity, setQuantity] = useState(initial ? String(initial.quantity) : "");
   const [rate, setRate] = useState(initial ? String(initial.rate) : "");
+  const [remarks, setRemarks] = useState(initial?.remarks ?? "");
   const [newVendor, setNewVendor] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -729,7 +740,7 @@ function PurchaseForm({
     if (!date || !itemId || !vendorId || !quantity || !rate) { setError("All fields are required"); return; }
     setSaving(true); setError("");
     const url = initial ? `/api/vegetable/purchases/${initial.id}` : "/api/vegetable/purchases";
-    const res = await fetch(url, { method: initial ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date, itemId, vendorId, quantity, rate }) });
+    const res = await fetch(url, { method: initial ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date, itemId, vendorId, quantity, rate, remarks }) });
     if (res.ok) onSaved();
     else { const d = await res.json().catch(() => ({})); setError(d.error || "Could not save"); setSaving(false); }
   };
@@ -763,6 +774,9 @@ function PurchaseForm({
         {quantity && rate && !isNaN(Number(quantity)) && !isNaN(Number(rate)) && (
           <div style={{ fontSize: 13, color: C.sub }}>Amount: <strong style={{ color: C.ink }}>{fmtMoney(Number(quantity) * Number(rate))}</strong></div>
         )}
+        <Field label="Remarks (optional)">
+          <Textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. quality issue, a debit applied" />
+        </Field>
         {error && <div style={{ color: C.red, fontSize: 13 }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
