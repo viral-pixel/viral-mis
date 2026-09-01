@@ -5,6 +5,7 @@ import { Plus, Download, Upload, Settings2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Textarea, Modal, ConfirmDelete, ClearDataModal } from "@/app/components/ui";
 import { C, FONT_BODY } from "@/app/lib/constants";
+import { extractMilanBillFromFile } from "@/app/lib/milanBillClientExtract";
 import { IndianRupee, Scale, CalendarClock } from "lucide-react";
 
 interface VegItem { id: number; srNo: number; name: string }
@@ -529,14 +530,7 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
               const file = e.target.files?.[0];
               if (!file) return;
               setImporting(true);
-              const fd = new FormData();
-              fd.append("file", file);
-              const res = await fetch("/api/vegetable/purchases/import-milan-bill", { method: "POST", body: fd });
-              const d = await res.json().catch(() => ({}));
-              setImporting(false);
-              e.target.value = "";
-              if (res.ok) { setImportedDraft(d); setShowBatchForm(true); }
-              else {
+              const fallbackToManualEntry = () => {
                 // No typed figures found (plain scan) — fall back to the
                 // manual-entry grid with the vendor pre-selected, same as
                 // the old behavior, instead of a dead-end error.
@@ -544,6 +538,30 @@ function PurchasesTab({ items, vendors, isAdmin, onVendorAdded }: { items: VegIt
                 setImportedDraft(null);
                 setPresetVendorId(jakir?.id ?? null);
                 setShowBatchForm(true);
+              };
+              try {
+                // Parsed IN THE BROWSER (pdfjs-dist) — the PDF embeds
+                // several MB of scan images that the parser never reads,
+                // and uploading the whole file 413s on Vercel's function
+                // payload limit. Only the tiny extracted result is sent.
+                const parsed = await extractMilanBillFromFile(file);
+                if (parsed.items.length === 0) {
+                  fallbackToManualEntry();
+                } else {
+                  const res = await fetch("/api/vegetable/purchases/import-milan-bill", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ items: parsed.items, skippedCount: parsed.skippedCount }),
+                  });
+                  const d = await res.json().catch(() => ({}));
+                  if (res.ok) { setImportedDraft(d); setShowBatchForm(true); }
+                  else { alert(d.error || "Could not import this bill"); fallbackToManualEntry(); }
+                }
+              } catch {
+                fallbackToManualEntry();
+              } finally {
+                setImporting(false);
+                e.target.value = "";
               }
             }}
           />

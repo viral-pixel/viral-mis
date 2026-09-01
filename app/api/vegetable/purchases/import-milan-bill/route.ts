@@ -2,44 +2,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
 import { VEGETABLE_SUBMODULE_SLUG } from "@/app/lib/vegetableItems";
-import { parseMilanBillPdf } from "@/app/lib/milanBillParser";
 
 // Milan Vegetable Co.'s pre-printed slip has no text layer of its own, but
 // the "typed figures" variant (Weight/Rate/Amount typed in as real PDF
 // text over the pre-printed grid) can be read deterministically from those
 // typed numbers' positions — no AI, no external API call, no per-bill
-// cost. See milanBillParser.ts for how. Returns a DRAFT only; nothing is
-// written to the database here. Date and vendor aren't in the typed data
-// (only the three figure columns are), so the client's review form starts
-// with today's date and the Jakir vendor preset — Ketan/Kiran corrects
-// those and reviews every line before Save All.
+// cost. See milanBillCalibration.ts for the row/column math.
+//
+// The PDF itself is NOT uploaded here — it embeds full-resolution scans of
+// the slip, several MB, well past Vercel's ~4.5MB serverless function
+// request-body limit (confirmed the hard way: a real bill 413'd in
+// production). None of those scan bytes matter to the parser, so the file
+// is parsed client-side with pdfjs-dist (see milanBillClientExtract.ts)
+// and only the small extracted {srNo, itemName, weight, rate, amount} list
+// is posted here — this route just does the vendor/item DB lookups and
+// returns a DRAFT; nothing is written to the database. Date and vendor
+// aren't in the typed data (only the three figure columns are), so the
+// client's review form starts with today's date and the Jakir vendor
+// preset — Ketan/Kiran corrects those and reviews every line before Save
+// All.
+interface MilanBillItemInput { srNo: number; itemName: string; weight: number; rate: number; amount: number }
+
 export async function POST(req: NextRequest) {
   const auth = await requireModuleAccessBySubModuleSlug(VEGETABLE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
-  if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
-
-  const buf = Buffer.from(await file.arrayBuffer());
-  let parsed;
-  try {
-    parsed = await parseMilanBillPdf(buf);
-  } catch {
-    return NextResponse.json({ error: "Could not read this PDF" }, { status: 400 });
-  }
-
-  if (parsed.items.length === 0) {
-    return NextResponse.json({
-      error: "No typed figures found in this PDF. This reader only works with the \"typed figures\" version of the bill — Weight/Rate/Amount entered as PDF text, not just handwritten on a scan.",
-    }, { status: 422 });
+  const body = await req.json().catch(() => null) as { items?: MilanBillItemInput[]; skippedCount?: number } | null;
+  const parsedItems = body?.items;
+  if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
+    return NextResponse.json({ error: "No line items to import." }, { status: 400 });
   }
 
   const vendor = await prisma.vegetableVendor.findFirst({ where: { name: { equals: "Jakir", mode: "insensitive" } } });
   const dbItems = await prisma.vegetableItem.findMany();
   const itemByName = new Map(dbItems.map((i) => [i.name, i]));
 
-  const lines = parsed.items.map((it) => {
+  const lines = parsedItems.map((it) => {
     const dbItem = itemByName.get(it.itemName);
     return {
       particulars: it.itemName,
@@ -63,6 +61,6 @@ export async function POST(req: NextRequest) {
     totalMismatch: false,
     lines,
     unmatchedCount: lines.filter((l) => l.itemId == null).length,
-    skippedCount: parsed.skippedCount,
+    skippedCount: body?.skippedCount ?? 0,
   });
 }

@@ -7,14 +7,14 @@ import { VEGETABLE_ITEMS } from "@/app/lib/vegetableItems";
 // to extract deterministically (see ambeBillParser.ts's doc comment for
 // the contrast with Ambe's real GST invoices).
 //
-// This parser only works on the "typed figures" variant: the same slip,
-// but with the handwritten Weight/Rate/Amount numbers also typed into the
-// PDF as real text objects positioned over the pre-printed grid — nothing
-// else is typed (no item names, no date, no site name). Because the grid
-// is pre-printed and fixed, those typed numbers' (x, y) positions turn out
-// to be exact, uniform arithmetic functions of the row's Sr. No. — so
-// which vegetable a typed figure belongs to is not a guess, it's a
-// calculation. No AI, no OCR, no per-bill cost.
+// This works only on the "typed figures" variant: the same slip, but with
+// the handwritten Weight/Rate/Amount numbers also typed into the PDF as
+// real text objects positioned over the pre-printed grid — nothing else is
+// typed (no item names, no date, no site name). Because the grid is
+// pre-printed and fixed, those typed numbers' (x, y) positions turn out to
+// be exact, uniform arithmetic functions of the row's Sr. No. — so which
+// vegetable a typed figure belongs to is not a guess, it's a calculation.
+// No AI, no OCR, no per-bill cost.
 //
 // Calibration below was solved (linear regression) from 10 real populated
 // rows on a real 2-page bill, every one cross-checked by eye against the
@@ -51,7 +51,7 @@ function parseNum(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-interface PositionedTextItem {
+export interface PositionedTextItem {
   page: number;
   str: string;
   x: number;
@@ -74,33 +74,20 @@ export interface ParsedMilanBill {
   skippedCount: number;
 }
 
-// pdf-parse's plain .text is a flat string with no coordinates — useless
-// here. Its `pagerender` option hands back the underlying pdf.js page,
-// whose getTextContent() gives each text run's (x, y) via `transform`.
-export async function parseMilanBillPdf(buf: Buffer): Promise<ParsedMilanBill> {
-  const pdfParse = (await import("pdf-parse")).default;
-  const rawItems: PositionedTextItem[] = [];
-
-  await pdfParse(buf, {
-    pagerender: (pageData) =>
-      pageData.getTextContent().then((textContent) => {
-        for (const item of textContent.items) {
-          const str = item.str.trim();
-          if (!str) continue;
-          rawItems.push({ page: pageData.pageNumber, str, x: item.transform[4], y: item.transform[5] });
-        }
-        return "";
-      }),
-  });
-
+// Pure math over already-extracted text items — no PDF library, no I/O, so
+// it runs identically in the browser (pdfjs-dist, see milanBillClientExtract.ts)
+// and, if ever needed, on the server.
+export function buildMilanBillFromTextItems(rawItems: PositionedTextItem[]): ParsedMilanBill {
   // Group same-row figures: same page, same y (rounded — pdf.js sometimes
   // emits sub-pixel jitter between text runs typed at the "same" spot).
   const rowGroups = new Map<string, PositionedTextItem[]>();
   for (const it of rawItems) {
+    const str = it.str.trim();
+    if (!str) continue;
     const key = `${it.page}:${Math.round(it.y)}`;
     const group = rowGroups.get(key);
-    if (group) group.push(it);
-    else rowGroups.set(key, [it]);
+    if (group) group.push({ ...it, str });
+    else rowGroups.set(key, [{ ...it, str }]);
   }
 
   const items: ParsedMilanItem[] = [];
