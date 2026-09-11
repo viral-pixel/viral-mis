@@ -1075,6 +1075,9 @@ function PotatoOnionForm({
           <Field label="Quantity (Kg)"><Input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></Field>
           <Field label="Rate (₹/Kg)"><Input type="number" step="any" value={rate} onChange={(e) => setRate(e.target.value)} /></Field>
         </div>
+        {quantity && rate && !isNaN(Number(quantity)) && !isNaN(Number(rate)) && (
+          <div style={{ fontSize: 13, color: C.sub }}>Amount: <strong style={{ color: C.ink }}>{fmtMoney(Number(quantity) * Number(rate))}</strong></div>
+        )}
         <Field label="Material Received Date (free text — e.g. '29-07-2025 Morning')">
           <Input value={materialReceivedDate} onChange={(e) => setMaterialReceivedDate(e.target.value)} />
         </Field>
