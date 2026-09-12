@@ -545,3 +545,28 @@ model RotiLineItem {
   @@unique([dayEntryId, siteId, mealTypeId, categoryId])
   @@index([dayEntryId])
 }
+
+// ---- SubModule: "Vendor Payment" (Sandip Prajapati, Finance & Accounts) ----
+// Replaces the "Vendor Payment_NCS" Excel register: Sandip raises a payment
+// request per vendor, Admin reviews and closes it once actually paid. Kept
+// deliberately simpler than the source sheet (which had separate Finance vs
+// Mgt. approval columns) per the user's explicit "simple" request — one
+// status the two of them share, plus one remarks field each.
+model VendorPaymentEntry {
+  id          Int      @id @default(autoincrement())
+  vendorName  String
+  amount      Float
+  paymentDate DateTime // requested date of payment — the "total per day" summary groups on this
+  urgency     String   @default("Normal") // "Normal" | "Urgent" — set by Sandip when raising the request
+  status      String   @default("Open")   // "Open" | "Closed" — either side can flip this once paid
+
+  remarksFinance String @default("") // Sandip's remarks
+  remarksAdmin   String @default("") // Admin's remarks
+
+  enteredBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([paymentDate])
+  @@index([status])
+}

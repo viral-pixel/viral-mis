@@ -4,6 +4,7 @@ import { COMPLIANCE_SUBMODULE_SLUG } from "../app/lib/complianceEntities";
 import { PURCHASE_SUBMODULE_SLUG, PURCHASE_GROUPS, subItemsForGroup } from "../app/lib/purchaseGroups";
 import { VEGETABLE_SUBMODULE_SLUG, VEGETABLE_ITEMS } from "../app/lib/vegetableItems";
 import { ROTI_SUBMODULE_SLUG, ROTI_DEFAULT_SITES, ROTI_DEFAULT_MEAL_TYPES, ROTI_DEFAULT_CATEGORIES } from "../app/lib/rotiMeta";
+import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "../app/lib/vendorPaymentMeta";
 
 const prisma = new PrismaClient();
 
@@ -104,6 +105,22 @@ async function main() {
     });
   }
 
+  const sandipModule = await prisma.module.upsert({
+    where: { name: "Sandip Reports" },
+    update: {},
+    create: { name: "Sandip Reports" },
+  });
+
+  await prisma.subModule.upsert({
+    where: { slug: VENDOR_PAYMENT_SUBMODULE_SLUG },
+    update: {},
+    create: {
+      moduleId: sandipModule.id,
+      name: "Vendor Payment",
+      slug: VENDOR_PAYMENT_SUBMODULE_SLUG,
+    },
+  });
+
   const existingAdmin = await prisma.user.findUnique({ where: { username: "admin" } });
   const adminPassword = existingAdmin ? null : randomPassword();
   const admin = await prisma.user.upsert({
@@ -155,9 +172,29 @@ async function main() {
     create: { userId: kiranUser.id, moduleId: kiranModule.id },
   });
 
+  const existingSandip = await prisma.user.findUnique({ where: { username: "sandip" } });
+  const sandipPassword = existingSandip ? null : randomPassword();
+  const sandipUser = await prisma.user.upsert({
+    where: { username: "sandip" },
+    update: {},
+    create: {
+      username: "sandip",
+      displayName: "Sandip Prajapati",
+      isAdmin: false,
+      passwordHash: await bcrypt.hash(sandipPassword ?? "", 10),
+    },
+  });
+
+  await prisma.userModuleAccess.upsert({
+    where: { userId_moduleId: { userId: sandipUser.id, moduleId: sandipModule.id } },
+    update: {},
+    create: { userId: sandipUser.id, moduleId: sandipModule.id },
+  });
+
   console.log("Seed complete.");
   console.log("Module:", ketanModule.name, "| SubModules:", COMPLIANCE_SUBMODULE_SLUG, PURCHASE_SUBMODULE_SLUG, VEGETABLE_SUBMODULE_SLUG);
   console.log("Module:", kiranModule.name, "| SubModules:", ROTI_SUBMODULE_SLUG);
+  console.log("Module:", sandipModule.name, "| SubModules:", VENDOR_PAYMENT_SUBMODULE_SLUG);
   console.log(`Seeded ${PURCHASE_GROUPS.length} purchase costing groups.`);
   console.log(`Seeded ${VEGETABLE_ITEMS.length} vegetable/fruit master items.`);
   console.log(`Seeded ${ROTI_DEFAULT_SITES.length} roti sites, ${ROTI_DEFAULT_MEAL_TYPES.length} meal types, ${ROTI_DEFAULT_CATEGORIES.length} categories.`);
@@ -167,6 +204,8 @@ async function main() {
   else console.log("ketan user already existed, password unchanged");
   if (kiranPassword) console.log(`New kiran login -> username: kiran  password: ${kiranPassword}`);
   else console.log("kiran user already existed, password unchanged");
+  if (sandipPassword) console.log(`New sandip login -> username: sandip  password: ${sandipPassword}`);
+  else console.log("sandip user already existed, password unchanged");
   console.log(`admin id=${admin.id}`);
 }
 

@@ -6,10 +6,12 @@ import { COMPLIANCE_SUBMODULE_SLUG } from "@/app/lib/complianceEntities";
 import { PURCHASE_SUBMODULE_SLUG } from "@/app/lib/purchaseGroups";
 import { VEGETABLE_SUBMODULE_SLUG } from "@/app/lib/vegetableItems";
 import { ROTI_SUBMODULE_SLUG } from "@/app/lib/rotiMeta";
+import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
 
 export const SUBMODULE_ROUTES: Record<string, string> = {
   [COMPLIANCE_SUBMODULE_SLUG]: "/compliance",
   [PURCHASE_SUBMODULE_SLUG]: "/purchase",
   [VEGETABLE_SUBMODULE_SLUG]: "/vegetable",
   [ROTI_SUBMODULE_SLUG]: "/roti",
+  [VENDOR_PAYMENT_SUBMODULE_SLUG]: "/vendor-payment",
 };
