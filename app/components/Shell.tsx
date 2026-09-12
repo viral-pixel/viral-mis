@@ -65,6 +65,7 @@ export function Shell({ children }: { children: ReactNode }) {
               My Reports
             </div>
             <NavLink href="/admin/vegetable-analysis" label="Vegetable Cost Analysis" icon={PieChart} pathname={pathname} />
+            <NavLink href="/admin/vendor-payment-report" label="Vendor Payment Report" icon={PieChart} pathname={pathname} />
           </div>
         )}
 

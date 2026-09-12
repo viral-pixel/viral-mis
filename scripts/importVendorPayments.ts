@@ -17,6 +17,11 @@ function toCleanDate(v: unknown): Date | null {
 }
 function toNum(v: unknown): number | null {
   if (v === "" || v == null) return null;
+  // A handful of source rows have a stray date typed into an amount column
+  // (data-entry mistake) — Number(aDate) silently returns its epoch
+  // milliseconds instead of NaN, which would otherwise corrupt every sum
+  // that touches this row. Reject Date values outright instead.
+  if (v instanceof Date) return null;
   const n = Number(v);
   return isNaN(n) ? null : n;
 }
