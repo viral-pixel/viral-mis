@@ -70,6 +70,7 @@ export default function VendorPaymentPage() {
   const [to, setTo] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [page, setPage] = useState(1);
+  const [approvingRow, setApprovingRow] = useState<PaymentRow | null>(null);
   const [suggestions, setSuggestions] = useState<{ vendorNames: string[]; vendorTypes: string[]; bankNames: string[] }>({ vendorNames: [], vendorTypes: [], bankNames: [] });
 
   const qs = useMemo(() => {
@@ -83,7 +84,15 @@ export default function VendorPaymentPage() {
   const load = () => fetch(`/api/vendor-payment?${qs}`).then((r) => r.json()).then(setRows);
   const loadSuggestions = () => fetch("/api/vendor-payment/suggestions").then((r) => r.json()).then(setSuggestions);
 
-  useEffect(() => { load(); setPage(1); }, [qs]);
+  // Auto-refresh so a status/approval change one side makes shows up on the
+  // other without a manual reload — this is the shared link between
+  // Sandip's and Admin's logins the whole module is built around.
+  useEffect(() => {
+    load();
+    setPage(1);
+    const id = setInterval(load, 20000);
+    return () => clearInterval(id);
+  }, [qs]);
   useEffect(() => {
     loadSuggestions();
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setIsAdmin(!!d.user?.isAdmin));
@@ -212,7 +221,7 @@ export default function VendorPaymentPage() {
                         </td>
                       </tr>
                     )}
-                    <EntryRow row={r} isAdmin={isAdmin} onSave={(d) => saveDraft(d, r.id)} onDelete={() => del(r.id)} />
+                    <EntryRow row={r} isAdmin={isAdmin} onSave={(d) => saveDraft(d, r.id)} onDelete={() => del(r.id)} onApprove={() => setApprovingRow(r)} />
                   </Fragment>
                 );
               })}
@@ -221,6 +230,18 @@ export default function VendorPaymentPage() {
           {rows.length === 0 && <Empty text="No payment requests for this filter yet — add one above." />}
           {rows.length > PAGE_SIZE && <Pager page={page} setPage={setPage} total={rows.length} pageSize={PAGE_SIZE} />}
         </>
+      )}
+
+      {/* Rendered at the page level, not inside the table — a fixed-position
+          dialog must never nest inside <tbody>/<tr>, which is invalid HTML
+          and causes the browser to silently "correct" the DOM in ways that
+          can break click targeting elsewhere on the page. */}
+      {approvingRow && (
+        <ApproveModal
+          row={approvingRow}
+          onClose={() => setApprovingRow(null)}
+          onSave={(d) => saveDraft(d, approvingRow.id)}
+        />
       )}
     </div>
   );
@@ -232,13 +253,20 @@ export default function VendorPaymentPage() {
 function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => Promise<boolean> }) {
   const [d, setD] = useState<Draft>(BLANK_DRAFT);
   const [saving, setSaving] = useState(false);
+  const [justSent, setJustSent] = useState(false);
   const set = (patch: Partial<Draft>) => setD((prev) => ({ ...prev, ...patch }));
 
   const submit = async () => {
     setSaving(true);
     const ok = await onSave(d);
     setSaving(false);
-    if (ok) setD({ ...BLANK_DRAFT, paymentDate: d.paymentDate }); // keep the date — batches of entries usually share one day
+    if (ok) {
+      setD({ ...BLANK_DRAFT, paymentDate: d.paymentDate }); // keep the date — batches of entries usually share one day
+      // There's no separate "submit" step — saving IS sending it to Admin's
+      // queue (status defaults to Open). This confirmation is the only
+      // feedback of that, since otherwise the row just silently clears.
+      if (!isAdmin) { setJustSent(true); setTimeout(() => setJustSent(false), 2500); }
+    }
   };
   const onKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
 
@@ -291,18 +319,21 @@ function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => P
         // and closing are Admin's step, so nothing to fill in here.
         <><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td></>
       )}
-      <Td style={stickyActions(rowBg)}><Btn onClick={submit} disabled={saving}>{saving ? "Adding…" : "Add"}</Btn></Td>
+      <Td style={stickyActions(rowBg)}>
+        {justSent
+          ? <span style={{ color: C.green, fontWeight: 600, fontSize: 12.5 }}>✓ Sent to Admin</span>
+          : <Btn onClick={submit} disabled={saving}>{saving ? "Adding…" : "Add"}</Btn>}
+      </Td>
     </tr>
   );
 }
 
 function EntryRow({
-  row, isAdmin, onSave, onDelete,
+  row, isAdmin, onSave, onDelete, onApprove,
 }: {
-  row: PaymentRow; isAdmin: boolean; onSave: (d: Draft) => Promise<boolean>; onDelete: () => void;
+  row: PaymentRow; isAdmin: boolean; onSave: (d: Draft) => Promise<boolean>; onDelete: () => void; onApprove: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [showApprove, setShowApprove] = useState(false);
   const [d, setD] = useState<Draft>(() => rowToDraft(row));
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<Draft>) => setD((prev) => ({ ...prev, ...patch }));
@@ -327,7 +358,6 @@ function EntryRow({
   if (!editing) {
     const rowBg = row.urgency === "Urgent" ? C.redSoft : "#fff";
     return (
-      <Fragment>
       <tr style={{ background: rowBg === "#fff" ? undefined : rowBg }}>
         <Td>{fmtDate(row.paymentDate)}</Td>
         <Td>{row.vendorName}</Td>
@@ -346,7 +376,7 @@ function EntryRow({
         <Td style={stickyActions(rowBg)}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {isAdmin && row.status === "Open" && (
-              <Btn onClick={() => setShowApprove(true)} style={{ padding: "5px 10px" }}>Approve</Btn>
+              <Btn onClick={onApprove} style={{ padding: "5px 10px" }}>Approve</Btn>
             )}
             {canEdit
               ? <button onClick={startEdit} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Edit</button>
@@ -355,8 +385,6 @@ function EntryRow({
           </div>
         </Td>
       </tr>
-      {showApprove && <ApproveModal row={row} onClose={() => setShowApprove(false)} onSave={onSave} />}
-      </Fragment>
     );
   }
 
