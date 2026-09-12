@@ -10,6 +10,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json();
   const isAdmin = !!auth.session.isAdmin;
 
+  // Sandip can fix his own request while it's still Open; once Admin closes
+  // it, only Admin can edit/reopen — enforced here too, not just hidden in
+  // the UI, so a closed record can't be changed by calling the API directly.
+  if (!isAdmin) {
+    const existing = await prisma.vendorPaymentEntry.findUnique({ where: { id: Number(id) }, select: { status: true } });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (existing.status === "Closed") {
+      return NextResponse.json({ error: "This request is already closed — ask Admin to reopen it before editing" }, { status: 403 });
+    }
+  }
+
   const data: Record<string, unknown> = {
     vendorName: String(body.vendorName).trim(),
     vendorType: (body.vendorType ?? "").trim(),

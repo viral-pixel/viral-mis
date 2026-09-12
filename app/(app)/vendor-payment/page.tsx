@@ -45,6 +45,15 @@ function UrgencyTag({ value }: { value: string }) {
 function StatusTag({ value }: { value: string }) {
   return value === "Closed" ? <Tag color={C.green} bg="#E6F1E5">CLOSED</Tag> : <Tag color={C.amber} bg={C.amberSoft}>OPEN</Tag>;
 }
+// The remaining-outstanding figure is never stored — it's derived live from
+// outstandingAmount - approvedAmount every time either changes, so it's
+// always correct with no risk of double-subtracting on repeated edits.
+function outstandingDisplay(outstanding: number | null, approved: number | null) {
+  if (outstanding == null) return "—";
+  if (approved == null || approved <= 0) return fmtMoney(outstanding);
+  const remaining = Math.max(0, outstanding - approved);
+  return `${fmtMoney(outstanding)} → ${fmtMoney(remaining)}`;
+}
 const cellInput: React.CSSProperties = { padding: "5px 6px", fontSize: 12.5, minWidth: 90 };
 
 export default function VendorPaymentPage() {
@@ -78,20 +87,25 @@ export default function VendorPaymentPage() {
     if (res.ok) load(); else alert("Could not delete");
   };
 
-  const openTotals = useMemo(() => {
-    const map = new Map<string, { total: number; count: number }>();
+  // Split Normal vs Urgent per date, not just a lump sum — so before
+  // initiating payments it's clear how much of the day's total is the
+  // routine amount vs. what needs to move first.
+  const dateTotals = useMemo(() => {
+    const map = new Map<string, { normal: number; urgent: number; count: number }>();
     (rows ?? []).filter((r) => r.status === "Open").forEach((r) => {
       const key = r.paymentDate.slice(0, 10);
-      const cur = map.get(key) ?? { total: 0, count: 0 };
-      cur.total += r.amount; cur.count += 1;
+      const cur = map.get(key) ?? { normal: 0, urgent: 0, count: 0 };
+      if (r.urgency === "Urgent") cur.urgent += r.amount; else cur.normal += r.amount;
+      cur.count += 1;
       map.set(key, cur);
     });
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [rows]);
 
-  const grandOpenTotal = openTotals.reduce((s, [, v]) => s + v.total, 0);
+  const grandNormalTotal = dateTotals.reduce((s, [, v]) => s + v.normal, 0);
+  const grandUrgentTotal = dateTotals.reduce((s, [, v]) => s + v.urgent, 0);
+  const grandOpenTotal = grandNormalTotal + grandUrgentTotal;
   const openCount = (rows ?? []).filter((r) => r.status === "Open").length;
-  const urgentOpenCount = (rows ?? []).filter((r) => r.status === "Open" && r.urgency === "Urgent").length;
 
   const pageRows = (rows ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -118,21 +132,23 @@ export default function VendorPaymentPage() {
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
         <StatCard icon={IndianRupee} label="Total Pending (Open)" value={fmtMoney(grandOpenTotal)} tint={C.teal} />
-        <StatCard icon={AlertTriangle} label="Urgent & Open" value={urgentOpenCount} tint={C.red} />
+        <StatCard icon={ListChecks} label="Normal Pending" value={fmtMoney(grandNormalTotal)} tint={C.sub} />
+        <StatCard icon={AlertTriangle} label="Urgent Pending" value={fmtMoney(grandUrgentTotal)} tint={C.red} />
         <StatCard icon={ListChecks} label="Open Requests" value={openCount} tint={C.amber} />
       </div>
 
-      {openTotals.length > 0 && (
+      {dateTotals.length > 0 && (
         <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, marginBottom: 18 }}>
           <div style={{ fontFamily: FONT_BODY, fontSize: 12, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
-            Total Requested Per Date (Open only) — know this before initiating payments
+            Total Requested Per Date (Open only) — Sandip and Admin both see this before initiating payments
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {openTotals.map(([date, v]) => (
-              <div key={date} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", minWidth: 140 }}>
-                <div style={{ fontSize: 11.5, color: C.sub }}>{fmtDate(date)}</div>
-                <div style={{ fontFamily: FONT_HEAD, fontSize: 18, color: C.ink }}>{fmtMoney(v.total)}</div>
-                <div style={{ fontSize: 11, color: C.faint }}>{v.count} request{v.count === 1 ? "" : "s"}</div>
+            {dateTotals.map(([date, v]) => (
+              <div key={date} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", minWidth: 160 }}>
+                <div style={{ fontSize: 11.5, color: C.sub, marginBottom: 4 }}>{fmtDate(date)} · {v.count} request{v.count === 1 ? "" : "s"}</div>
+                <div style={{ fontSize: 12.5, color: C.ink }}>Normal: {fmtMoney(v.normal)}</div>
+                <div style={{ fontSize: 12.5, color: C.red }}>Urgent: {fmtMoney(v.urgent)}</div>
+                <div style={{ fontFamily: FONT_HEAD, fontSize: 18, color: C.ink, marginTop: 2 }}>Total: {fmtMoney(v.normal + v.urgent)}</div>
               </div>
             ))}
           </div>
@@ -222,7 +238,12 @@ function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => P
       <Td><Input style={cellInput} placeholder="Remarks" value={d.remarksFinance} onChange={(e) => set({ remarksFinance: e.target.value })} /></Td>
       {isAdmin ? (
         <>
-          <Td><Input style={cellInput} type="number" step="any" value={d.approvedAmount} onChange={(e) => set({ approvedAmount: e.target.value })} /></Td>
+          <Td>
+            <Input style={cellInput} type="number" step="any" value={d.approvedAmount} onChange={(e) => set({ approvedAmount: e.target.value })} />
+            {d.outstandingAmount && d.approvedAmount && (
+              <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>Bal: {outstandingDisplay(Number(d.outstandingAmount), Number(d.approvedAmount)).split("→")[1] ?? ""}</div>
+            )}
+          </Td>
           <Td><Input style={cellInput} type="date" value={d.datePaid} onChange={(e) => set({ datePaid: e.target.value })} /></Td>
           <Td><Input style={cellInput} placeholder="Remarks" value={d.remarksAdmin} onChange={(e) => set({ remarksAdmin: e.target.value })} /></Td>
           <Td>
@@ -261,15 +282,20 @@ function EntryRow({
     if (e.key === "Escape") setEditing(false);
   };
 
+  // Sandip can fix his own request while it's still Open ("before sending
+  // it to me") — once Admin closes it, only Admin can still edit/reopen, so
+  // a paid/closed record can't quietly change under him.
+  const canEdit = isAdmin || row.status === "Open";
+
   if (!editing) {
     return (
-      <tr>
+      <tr style={{ background: row.urgency === "Urgent" ? C.redSoft : undefined }}>
         <Td>{fmtDate(row.paymentDate)}</Td>
         <Td>{row.vendorName}</Td>
         <Td>{row.vendorType || "—"}</Td>
         <Td>{row.bankName || "—"}</Td>
         <Td>{row.contactDetails || "—"}</Td>
-        <Td>{fmtMoney(row.outstandingAmount)}</Td>
+        <Td>{outstandingDisplay(row.outstandingAmount, row.approvedAmount)}</Td>
         <Td>{fmtMoney(row.amount)}</Td>
         <Td>{row.paymentType}</Td>
         <Td><UrgencyTag value={row.urgency} /></Td>
@@ -280,7 +306,9 @@ function EntryRow({
         <Td><StatusTag value={row.status} /></Td>
         <Td>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button onClick={startEdit} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Edit</button>
+            {canEdit
+              ? <button onClick={startEdit} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Edit</button>
+              : <span style={{ color: C.faint, fontSize: 12 }}>Closed</span>}
             {isAdmin && <ConfirmDelete onConfirm={onDelete} />}
           </div>
         </Td>
@@ -310,7 +338,12 @@ function EntryRow({
       <Td><Input style={cellInput} value={d.remarksFinance} onChange={(e) => set({ remarksFinance: e.target.value })} /></Td>
       {isAdmin ? (
         <>
-          <Td><Input style={cellInput} type="number" step="any" value={d.approvedAmount} onChange={(e) => set({ approvedAmount: e.target.value })} /></Td>
+          <Td>
+            <Input style={cellInput} type="number" step="any" value={d.approvedAmount} onChange={(e) => set({ approvedAmount: e.target.value })} />
+            {d.outstandingAmount && d.approvedAmount && (
+              <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>Bal: {outstandingDisplay(Number(d.outstandingAmount), Number(d.approvedAmount)).split("→")[1] ?? ""}</div>
+            )}
+          </Td>
           <Td><Input style={cellInput} type="date" value={d.datePaid} onChange={(e) => set({ datePaid: e.target.value })} /></Td>
           <Td><Input style={cellInput} value={d.remarksAdmin} onChange={(e) => set({ remarksAdmin: e.target.value })} /></Td>
           <Td>
