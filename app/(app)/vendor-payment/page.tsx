@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { IndianRupee, AlertTriangle, ListChecks } from "lucide-react";
-import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, ConfirmDelete, Tag, Pager } from "@/app/components/ui";
+import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Textarea, Modal, ConfirmDelete, Tag, Pager } from "@/app/components/ui";
 import { C, FONT_HEAD, FONT_BODY, PAGE_SIZE } from "@/app/lib/constants";
 
 interface PaymentRow {
@@ -56,6 +56,12 @@ function outstandingDisplay(outstanding: number | null, approved: number | null)
 }
 const cellInput: React.CSSProperties = { padding: "5px 6px", fontSize: 12.5, minWidth: 90 };
 const cellInputWide: React.CSSProperties = { ...cellInput, minWidth: 150 };
+// Actions (Edit/Approve/Delete) stay visible without scrolling right through
+// 14 columns — this is the whole fix for "I couldn't see how to approve":
+// the button was always there, just off-screen past Remarks (Admin)/Status.
+const stickyActions = (bg: string): React.CSSProperties => ({
+  position: "sticky", right: 0, background: bg, boxShadow: "-6px 0 8px -6px rgba(0,0,0,0.18)", zIndex: 1,
+});
 
 export default function VendorPaymentPage() {
   const [rows, setRows] = useState<PaymentRow[] | null>(null);
@@ -189,7 +195,7 @@ export default function VendorPaymentPage() {
               <tr>
                 <Th>Date</Th><Th>Vendor Name</Th><Th>Type</Th><Th>Name as per Bank</Th>
                 <Th>Outstanding</Th><Th>Amount</Th><Th>Pay Type</Th><Th>Urgency</Th><Th>Contact</Th><Th>Remarks (Finance)</Th>
-                <Th>Approved</Th><Th>Date Paid</Th><Th>Remarks (Admin)</Th><Th>Status</Th><Th />
+                <Th>Approved</Th><Th>Date Paid</Th><Th>Remarks (Admin)</Th><Th>Status</Th><Th style={stickyActions("#fff")} />
               </tr>
             </thead>
             <tbody>
@@ -285,7 +291,7 @@ function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => P
         // and closing are Admin's step, so nothing to fill in here.
         <><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td></>
       )}
-      <Td><Btn onClick={submit} disabled={saving}>{saving ? "Adding…" : "Add"}</Btn></Td>
+      <Td style={stickyActions(rowBg)}><Btn onClick={submit} disabled={saving}>{saving ? "Adding…" : "Add"}</Btn></Td>
     </tr>
   );
 }
@@ -296,6 +302,7 @@ function EntryRow({
   row: PaymentRow; isAdmin: boolean; onSave: (d: Draft) => Promise<boolean>; onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [showApprove, setShowApprove] = useState(false);
   const [d, setD] = useState<Draft>(() => rowToDraft(row));
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<Draft>) => setD((prev) => ({ ...prev, ...patch }));
@@ -318,8 +325,10 @@ function EntryRow({
   const canEdit = isAdmin || row.status === "Open";
 
   if (!editing) {
+    const rowBg = row.urgency === "Urgent" ? C.redSoft : "#fff";
     return (
-      <tr style={{ background: row.urgency === "Urgent" ? C.redSoft : undefined }}>
+      <Fragment>
+      <tr style={{ background: rowBg === "#fff" ? undefined : rowBg }}>
         <Td>{fmtDate(row.paymentDate)}</Td>
         <Td>{row.vendorName}</Td>
         <Td>{row.vendorType || "—"}</Td>
@@ -334,8 +343,11 @@ function EntryRow({
         <Td>{fmtDate(row.datePaid)}</Td>
         <Td>{row.remarksAdmin || "—"}</Td>
         <Td><StatusTag value={row.status} /></Td>
-        <Td>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <Td style={stickyActions(rowBg)}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {isAdmin && row.status === "Open" && (
+              <Btn onClick={() => setShowApprove(true)} style={{ padding: "5px 10px" }}>Approve</Btn>
+            )}
             {canEdit
               ? <button onClick={startEdit} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Edit</button>
               : <span style={{ color: C.faint, fontSize: 12 }}>Closed</span>}
@@ -343,6 +355,8 @@ function EntryRow({
           </div>
         </Td>
       </tr>
+      {showApprove && <ApproveModal row={row} onClose={() => setShowApprove(false)} onSave={onSave} />}
+      </Fragment>
     );
   }
 
@@ -389,13 +403,61 @@ function EntryRow({
           <Td>{fmtMoney(row.approvedAmount)}</Td><Td>{fmtDate(row.datePaid)}</Td><Td>{row.remarksAdmin || "—"}</Td><Td><StatusTag value={row.status} /></Td>
         </>
       )}
-      <Td>
+      <Td style={stickyActions(rowBg)}>
         <div style={{ display: "flex", gap: 8 }}>
           <Btn onClick={submit} disabled={saving} style={{ padding: "5px 10px" }}>{saving ? "…" : "Save"}</Btn>
           <Btn variant="ghost" onClick={() => setEditing(false)} style={{ padding: "5px 10px" }}>Cancel</Btn>
         </div>
       </Td>
     </tr>
+  );
+}
+
+// Admin's dedicated, hard-to-miss approve-and-pay action — a focused dialog
+// instead of scrolling the wide grid to find the four admin-only cells at
+// the far right. Pre-fills Approved Amount from the requested amount and
+// Date Paid with today, both still editable (partial/short payments, or a
+// backdated entry, happen per the source data).
+function ApproveModal({ row, onClose, onSave }: { row: PaymentRow; onClose: () => void; onSave: (d: Draft) => Promise<boolean> }) {
+  const [approvedAmount, setApprovedAmount] = useState(row.approvedAmount != null ? String(row.approvedAmount) : String(row.amount));
+  const [datePaid, setDatePaid] = useState(row.datePaid ? row.datePaid.slice(0, 10) : new Date().toISOString().slice(0, 10));
+  const [remarksAdmin, setRemarksAdmin] = useState(row.remarksAdmin);
+  const [status, setStatus] = useState<"Open" | "Closed">("Closed");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    setSaving(true);
+    const ok = await onSave({ ...rowToDraft(row), approvedAmount, datePaid, remarksAdmin, status });
+    setSaving(false);
+    if (ok) onClose();
+  };
+
+  return (
+    <Modal title={`Approve & Pay — ${row.vendorName}`} onClose={onClose} width={460}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 13, color: C.sub }}>
+          Requested {fmtMoney(row.amount)} for {fmtDate(row.paymentDate)}
+          {row.outstandingAmount != null ? ` — outstanding ${fmtMoney(row.outstandingAmount)}` : ""}
+          {row.remarksFinance ? ` — "${row.remarksFinance}"` : ""}
+        </div>
+        <Field label="Approved / Paid Amount (₹)"><Input type="number" step="any" value={approvedAmount} onChange={(e) => setApprovedAmount(e.target.value)} /></Field>
+        <Field label="Date Paid"><Input type="date" value={datePaid} onChange={(e) => setDatePaid(e.target.value)} /></Field>
+        <Field label="Remarks (Admin)"><Textarea rows={2} value={remarksAdmin} onChange={(e) => setRemarksAdmin(e.target.value)} /></Field>
+        <Field label="Status">
+          <Select value={status} onChange={(e) => setStatus(e.target.value as "Open" | "Closed")}>
+            <option value="Closed">Closed — paid</option>
+            <option value="Open">Keep Open (just record progress)</option>
+          </Select>
+        </Field>
+        {approvedAmount && row.outstandingAmount != null && (
+          <div style={{ fontSize: 12.5, color: C.sub }}>Outstanding after this payment: {outstandingDisplay(row.outstandingAmount, Number(approvedAmount)).split("→")[1] ?? fmtMoney(row.outstandingAmount)}</div>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

@@ -228,7 +228,7 @@ export function SectionHead({ title, sub, action }: { title: string; sub?: React
   );
 }
 
-export function Th({ children }: { children?: ReactNode }) {
+export function Th({ children, style }: { children?: ReactNode; style?: React.CSSProperties }) {
   return (
     <th
       style={{
@@ -241,6 +241,7 @@ export function Th({ children }: { children?: ReactNode }) {
         letterSpacing: "0.03em",
         borderBottom: `1px solid ${C.border}`,
         whiteSpace: "nowrap",
+        ...style,
       }}
     >
       {children}
