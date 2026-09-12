@@ -547,25 +547,38 @@ model RotiLineItem {
 }
 
 // ---- SubModule: "Vendor Payment" (Sandip Prajapati, Finance & Accounts) ----
-// Replaces the "Vendor Payment_NCS" Excel register: Sandip raises a payment
-// request per vendor, Admin reviews and closes it once actually paid. Kept
-// deliberately simpler than the source sheet (which had separate Finance vs
-// Mgt. approval columns) per the user's explicit "simple" request — one
-// status the two of them share, plus one remarks field each.
+// Replaces the "Vendor Payment_NCS" Excel register. Mirrors the real
+// two-step workflow the user described (2026-09-12): Sandip raises a
+// request (vendorName..remarksFinance below — his "Column A-G" fields),
+// Admin fills approvedAmount + datePaid (his "Column H/I") and is the only
+// one who flips status Open->Closed. Field-level write permission is
+// enforced in the API (app/api/vendor-payment), not just in the UI, so a
+// non-admin can't set the admin-only fields by calling the API directly.
 model VendorPaymentEntry {
-  id          Int      @id @default(autoincrement())
-  vendorName  String
-  amount      Float
-  paymentDate DateTime // requested date of payment — the "total per day" summary groups on this
-  urgency     String   @default("Normal") // "Normal" | "Urgent" — set by Sandip when raising the request
-  status      String   @default("Open")   // "Open" | "Closed" — either side can flip this once paid
+  id             Int    @id @default(autoincrement())
+  vendorName     String
+  vendorType     String @default("") // "Type of Vendor" in the source — a free-text category, not a rigid master (102 distinct values seen)
+  bankName       String @default("") // "Name as per Bank" — often identical to vendorName but occasionally differs
+  contactDetails String @default("")
+
+  outstandingAmount Float? // "Total Outstanding with NCS" — context only, not part of any calculation here
+  amount            Float // "Proposed Payment by Finance" — what Sandip is requesting
+  paymentDate       DateTime // "Proposed Date of Payment by Finance" — the "total per day" summary groups on this
+  paymentType       String   @default("NEFT") // NEFT | Cheque
+
+  approvedAmount Float? // "Approved Payment by Mgt." — Admin-only field, can differ from `amount` (partial payment)
+  datePaid       DateTime? // "Date of Payment by Mgt." — Admin-only field, set when actually paid
+
+  urgency String @default("Normal") // "Normal" | "Urgent" — set by Sandip when raising the request
+  status  String @default("Open") // "Open" | "Closed" — Admin-only to change, once approvedAmount/datePaid are in
 
   remarksFinance String @default("") // Sandip's remarks
   remarksAdmin   String @default("") // Admin's remarks
 
-  enteredBy String   @default("")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  enteredBy   String   @default("")
+  importBatch String   @default("") // set on rows bulk-imported from the historical Excel register, blank for entries made in-app
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([paymentDate])
   @@index([status])

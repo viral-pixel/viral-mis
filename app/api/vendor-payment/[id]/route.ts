@@ -7,20 +7,34 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const auth = await requireModuleAccessBySubModuleSlug(VENDOR_PAYMENT_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
   const { id } = await params;
+  const body = await req.json();
+  const isAdmin = !!auth.session.isAdmin;
 
-  const { vendorName, amount, paymentDate, urgency, status, remarksFinance, remarksAdmin } = await req.json();
-  const entry = await prisma.vendorPaymentEntry.update({
-    where: { id: Number(id) },
-    data: {
-      vendorName: String(vendorName).trim(),
-      amount: Number(amount),
-      paymentDate: new Date(paymentDate),
-      urgency: urgency === "Urgent" ? "Urgent" : "Normal",
-      status: status === "Closed" ? "Closed" : "Open",
-      remarksFinance: remarksFinance ?? "",
-      remarksAdmin: remarksAdmin ?? "",
-    },
-  });
+  const data: Record<string, unknown> = {
+    vendorName: String(body.vendorName).trim(),
+    vendorType: (body.vendorType ?? "").trim(),
+    bankName: (body.bankName ?? "").trim(),
+    contactDetails: (body.contactDetails ?? "").trim(),
+    outstandingAmount: body.outstandingAmount ? Number(body.outstandingAmount) : null,
+    amount: Number(body.amount),
+    paymentDate: new Date(body.paymentDate),
+    paymentType: body.paymentType === "Cheque" ? "Cheque" : "NEFT",
+    urgency: body.urgency === "Urgent" ? "Urgent" : "Normal",
+    remarksFinance: body.remarksFinance ?? "",
+  };
+
+  // Admin-only fields — a non-admin PUT simply can't move these, no matter
+  // what the request body contains (this is the "clear control" boundary
+  // the real workflow relies on: Sandip raises requests, only Admin
+  // approves/pays/closes).
+  if (isAdmin) {
+    data.approvedAmount = body.approvedAmount !== undefined && body.approvedAmount !== "" ? Number(body.approvedAmount) : null;
+    data.datePaid = body.datePaid ? new Date(body.datePaid) : null;
+    data.remarksAdmin = body.remarksAdmin ?? "";
+    data.status = body.status === "Closed" ? "Closed" : "Open";
+  }
+
+  const entry = await prisma.vendorPaymentEntry.update({ where: { id: Number(id) }, data });
   return NextResponse.json(entry);
 }
 
