@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { IndianRupee, AlertTriangle, ListChecks } from "lucide-react";
 import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, ConfirmDelete, Tag, Pager } from "@/app/components/ui";
 import { C, FONT_HEAD, FONT_BODY, PAGE_SIZE } from "@/app/lib/constants";
@@ -55,6 +55,7 @@ function outstandingDisplay(outstanding: number | null, approved: number | null)
   return `${fmtMoney(outstanding)} → ${fmtMoney(remaining)}`;
 }
 const cellInput: React.CSSProperties = { padding: "5px 6px", fontSize: 12.5, minWidth: 90 };
+const cellInputWide: React.CSSProperties = { ...cellInput, minWidth: 150 };
 
 export default function VendorPaymentPage() {
   const [rows, setRows] = useState<PaymentRow[] | null>(null);
@@ -108,6 +109,16 @@ export default function VendorPaymentPage() {
   const openCount = (rows ?? []).filter((r) => r.status === "Open").length;
 
   const pageRows = (rows ?? []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // So Sandip can tell at a glance "did I already enter today's batch, and
+  // how many" instead of scanning a flat list — counted over the full
+  // filtered set, not just the current page, since a day's entries won't
+  // usually span a page boundary.
+  const countsByDate = useMemo(() => {
+    const m = new Map<string, number>();
+    (rows ?? []).forEach((r) => { const k = r.paymentDate.slice(0, 10); m.set(k, (m.get(k) ?? 0) + 1); });
+    return m;
+  }, [rows]);
 
   const saveDraft = async (d: Draft, id?: number) => {
     if (!d.vendorName.trim() || !d.amount || !d.paymentDate) { alert("Vendor Name, Amount and Payment Date are required"); return false; }
@@ -176,16 +187,29 @@ export default function VendorPaymentPage() {
           <Table>
             <thead>
               <tr>
-                <Th>Date</Th><Th>Vendor</Th><Th>Type</Th><Th>Bank</Th><Th>Contact</Th>
-                <Th>Outstanding</Th><Th>Amount</Th><Th>Pay Type</Th><Th>Urgency</Th><Th>Remarks (Finance)</Th>
+                <Th>Date</Th><Th>Vendor Name</Th><Th>Type</Th><Th>Name as per Bank</Th>
+                <Th>Outstanding</Th><Th>Amount</Th><Th>Pay Type</Th><Th>Urgency</Th><Th>Contact</Th><Th>Remarks (Finance)</Th>
                 <Th>Approved</Th><Th>Date Paid</Th><Th>Remarks (Admin)</Th><Th>Status</Th><Th />
               </tr>
             </thead>
             <tbody>
               <AddRow isAdmin={isAdmin} onSave={(d) => saveDraft(d)} />
-              {pageRows.map((r) => (
-                <EntryRow key={r.id} row={r} isAdmin={isAdmin} onSave={(d) => saveDraft(d, r.id)} onDelete={() => del(r.id)} />
-              ))}
+              {pageRows.map((r, i) => {
+                const dateKey = r.paymentDate.slice(0, 10);
+                const isNewDateGroup = i === 0 || pageRows[i - 1].paymentDate.slice(0, 10) !== dateKey;
+                return (
+                  <Fragment key={r.id}>
+                    {isNewDateGroup && (
+                      <tr>
+                        <td colSpan={15} style={{ padding: "8px 12px", background: C.bg, fontSize: 11.5, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: `1px solid ${C.border}` }}>
+                          {fmtDate(dateKey)} — {countsByDate.get(dateKey) ?? 0} entr{(countsByDate.get(dateKey) ?? 0) === 1 ? "y" : "ies"}
+                        </td>
+                      </tr>
+                    )}
+                    <EntryRow row={r} isAdmin={isAdmin} onSave={(d) => saveDraft(d, r.id)} onDelete={() => del(r.id)} />
+                  </Fragment>
+                );
+              })}
             </tbody>
           </Table>
           {rows.length === 0 && <Empty text="No payment requests for this filter yet — add one above." />}
@@ -212,17 +236,20 @@ function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => P
   };
   const onKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
 
+  // Live feedback the instant Urgent is picked — before saving, not after —
+  // same red tint the saved row gets, so there's no surprise later.
+  const rowBg = d.urgency === "Urgent" ? C.redSoft : C.tealSoft;
+
   return (
-    <tr style={{ background: C.tealSoft }} onKeyDown={onKeyDown}>
+    <tr style={{ background: rowBg }} onKeyDown={onKeyDown}>
       <Td><Input style={cellInput} type="date" value={d.paymentDate} onChange={(e) => set({ paymentDate: e.target.value })} /></Td>
       <Td>
-        <Input style={cellInput} list="vp-vendor-names" placeholder="Vendor name" value={d.vendorName}
+        <Input style={cellInputWide} list="vp-vendor-names" placeholder="Vendor name" value={d.vendorName}
           onChange={(e) => set({ vendorName: e.target.value })}
           onBlur={() => { if (!d.bankName) set({ bankName: d.vendorName }); }} />
       </Td>
-      <Td><Input style={cellInput} list="vp-vendor-types" placeholder="Type" value={d.vendorType} onChange={(e) => set({ vendorType: e.target.value })} /></Td>
-      <Td><Input style={cellInput} list="vp-bank-names" placeholder="Bank name" value={d.bankName} onChange={(e) => set({ bankName: e.target.value })} /></Td>
-      <Td><Input style={cellInput} placeholder="Phone" value={d.contactDetails} onChange={(e) => set({ contactDetails: e.target.value })} /></Td>
+      <Td><Input style={cellInputWide} list="vp-vendor-types" placeholder="Type" value={d.vendorType} onChange={(e) => set({ vendorType: e.target.value })} /></Td>
+      <Td><Input style={cellInput} list="vp-bank-names" placeholder="Name as per bank" value={d.bankName} onChange={(e) => set({ bankName: e.target.value })} /></Td>
       <Td><Input style={cellInput} type="number" step="any" placeholder="₹" value={d.outstandingAmount} onChange={(e) => set({ outstandingAmount: e.target.value })} /></Td>
       <Td><Input style={{ ...cellInput, fontWeight: 700 }} type="number" step="any" placeholder="₹ required" value={d.amount} onChange={(e) => set({ amount: e.target.value })} /></Td>
       <Td>
@@ -235,6 +262,7 @@ function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => P
           <option value="Normal">Normal</option><option value="Urgent">Urgent</option>
         </Select>
       </Td>
+      <Td><Input style={cellInput} placeholder="Phone" value={d.contactDetails} onChange={(e) => set({ contactDetails: e.target.value })} /></Td>
       <Td><Input style={cellInput} placeholder="Remarks" value={d.remarksFinance} onChange={(e) => set({ remarksFinance: e.target.value })} /></Td>
       {isAdmin ? (
         <>
@@ -253,7 +281,9 @@ function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => P
           </Td>
         </>
       ) : (
-        <><Td>—</Td><Td>—</Td><Td>—</Td><Td>—</Td></>
+        // Sandip's entry stops at Remarks (Finance) above — approval, payment
+        // and closing are Admin's step, so nothing to fill in here.
+        <><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td></>
       )}
       <Td><Btn onClick={submit} disabled={saving}>{saving ? "Adding…" : "Add"}</Btn></Td>
     </tr>
@@ -294,11 +324,11 @@ function EntryRow({
         <Td>{row.vendorName}</Td>
         <Td>{row.vendorType || "—"}</Td>
         <Td>{row.bankName || "—"}</Td>
-        <Td>{row.contactDetails || "—"}</Td>
         <Td>{outstandingDisplay(row.outstandingAmount, row.approvedAmount)}</Td>
         <Td>{fmtMoney(row.amount)}</Td>
         <Td>{row.paymentType}</Td>
         <Td><UrgencyTag value={row.urgency} /></Td>
+        <Td>{row.contactDetails || "—"}</Td>
         <Td>{row.remarksFinance || "—"}</Td>
         <Td>{fmtMoney(row.approvedAmount)}</Td>
         <Td>{fmtDate(row.datePaid)}</Td>
@@ -316,13 +346,14 @@ function EntryRow({
     );
   }
 
+  const rowBg = d.urgency === "Urgent" ? C.redSoft : C.amberSoft;
+
   return (
-    <tr style={{ background: C.amberSoft }} onKeyDown={onKeyDown}>
+    <tr style={{ background: rowBg }} onKeyDown={onKeyDown}>
       <Td><Input style={cellInput} type="date" value={d.paymentDate} onChange={(e) => set({ paymentDate: e.target.value })} /></Td>
-      <Td><Input style={cellInput} list="vp-vendor-names" value={d.vendorName} onChange={(e) => set({ vendorName: e.target.value })} /></Td>
-      <Td><Input style={cellInput} list="vp-vendor-types" value={d.vendorType} onChange={(e) => set({ vendorType: e.target.value })} /></Td>
+      <Td><Input style={cellInputWide} list="vp-vendor-names" value={d.vendorName} onChange={(e) => set({ vendorName: e.target.value })} /></Td>
+      <Td><Input style={cellInputWide} list="vp-vendor-types" value={d.vendorType} onChange={(e) => set({ vendorType: e.target.value })} /></Td>
       <Td><Input style={cellInput} list="vp-bank-names" value={d.bankName} onChange={(e) => set({ bankName: e.target.value })} /></Td>
-      <Td><Input style={cellInput} value={d.contactDetails} onChange={(e) => set({ contactDetails: e.target.value })} /></Td>
       <Td><Input style={cellInput} type="number" step="any" value={d.outstandingAmount} onChange={(e) => set({ outstandingAmount: e.target.value })} /></Td>
       <Td><Input style={cellInput} type="number" step="any" value={d.amount} onChange={(e) => set({ amount: e.target.value })} /></Td>
       <Td>
@@ -335,6 +366,7 @@ function EntryRow({
           <option value="Normal">Normal</option><option value="Urgent">Urgent</option>
         </Select>
       </Td>
+      <Td><Input style={cellInput} value={d.contactDetails} onChange={(e) => set({ contactDetails: e.target.value })} /></Td>
       <Td><Input style={cellInput} value={d.remarksFinance} onChange={(e) => set({ remarksFinance: e.target.value })} /></Td>
       {isAdmin ? (
         <>
