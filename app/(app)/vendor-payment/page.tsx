@@ -322,7 +322,9 @@ function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => P
       <Td style={stickyActions(rowBg)}>
         {justSent
           ? <span style={{ color: C.green, fontWeight: 600, fontSize: 12.5 }}>✓ Sent to Admin</span>
-          : <Btn onClick={submit} disabled={saving}>{saving ? "Adding…" : "Add"}</Btn>}
+          : <Btn onClick={submit} disabled={saving}>
+              {isAdmin ? (saving ? "Adding…" : "Add") : (saving ? "Sending…" : "Send for Approval")}
+            </Btn>}
       </Td>
     </tr>
   );
