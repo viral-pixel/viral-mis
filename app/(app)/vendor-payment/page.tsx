@@ -298,27 +298,13 @@ function AddRow({ isAdmin, onSave }: { isAdmin: boolean; onSave: (d: Draft) => P
       </Td>
       <Td><Input style={cellInput} placeholder="Phone" value={d.contactDetails} onChange={(e) => set({ contactDetails: e.target.value })} /></Td>
       <Td><Input style={cellInput} placeholder="Remarks" value={d.remarksFinance} onChange={(e) => set({ remarksFinance: e.target.value })} /></Td>
-      {isAdmin ? (
-        <>
-          <Td>
-            <Input style={cellInput} type="number" step="any" value={d.approvedAmount} onChange={(e) => set({ approvedAmount: e.target.value })} />
-            {d.outstandingAmount && d.approvedAmount && (
-              <div style={{ fontSize: 10, color: C.sub, marginTop: 2 }}>Bal: {outstandingDisplay(Number(d.outstandingAmount), Number(d.approvedAmount)).split("→")[1] ?? ""}</div>
-            )}
-          </Td>
-          <Td><Input style={cellInput} type="date" value={d.datePaid} onChange={(e) => set({ datePaid: e.target.value })} /></Td>
-          <Td><Input style={cellInput} placeholder="Remarks" value={d.remarksAdmin} onChange={(e) => set({ remarksAdmin: e.target.value })} /></Td>
-          <Td>
-            <Select style={cellInput} value={d.status} onChange={(e) => set({ status: e.target.value })}>
-              <option value="Open">Open</option><option value="Closed">Closed</option>
-            </Select>
-          </Td>
-        </>
-      ) : (
-        // Sandip's entry stops at Remarks (Finance) above — approval, payment
-        // and closing are Admin's step, so nothing to fill in here.
-        <><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td></>
-      )}
+      {/* Every new entry — created by Sandip or by Admin on his behalf — is
+          just a request, Open, with nothing approved yet. Approved/Date
+          Paid/Remarks(Admin)/Status are exclusively Admin's domain and
+          exist in exactly one place: the "Approve" button/dialog on an
+          already-existing row. They never appear at creation time, for
+          anyone, so there's no ambiguity about where that work happens. */}
+      <Td>{null}</Td><Td>{null}</Td><Td>{null}</Td><Td>{null}</Td>
       <Td style={stickyActions(rowBg)}>
         {justSent
           ? <span style={{ color: C.green, fontWeight: 600, fontSize: 12.5 }}>✓ Sent to Admin</span>
