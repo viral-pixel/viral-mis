@@ -62,6 +62,7 @@ const cellInputWide: React.CSSProperties = { ...cellInput, minWidth: 150 };
 const stickyActions = (bg: string): React.CSSProperties => ({
   position: "sticky", right: 0, background: bg, boxShadow: "-6px 0 8px -6px rgba(0,0,0,0.18)", zIndex: 1,
 });
+const SEEN_OPEN_IDS_KEY = "vp-seen-open-ids";
 
 export default function VendorPaymentPage() {
   const [rows, setRows] = useState<PaymentRow[] | null>(null);
@@ -72,6 +73,7 @@ export default function VendorPaymentPage() {
   const [page, setPage] = useState(1);
   const [approvingRow, setApprovingRow] = useState<PaymentRow | null>(null);
   const [suggestions, setSuggestions] = useState<{ vendorNames: string[]; vendorTypes: string[]; bankNames: string[] }>({ vendorNames: [], vendorTypes: [], bankNames: [] });
+  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -97,6 +99,47 @@ export default function VendorPaymentPage() {
     loadSuggestions();
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setIsAdmin(!!d.user?.isAdmin));
   }, []);
+
+  const pushToast = (text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, text }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 7000);
+  };
+
+  // Admin-only watcher for new requests Sandip sends — independent of
+  // whatever status/date filter Admin currently has the table set to, so a
+  // new one still surfaces even if Admin is looking at "Closed" or a past
+  // date range. Runs on its own poll, separate from the main list's `load`.
+  useEffect(() => {
+    if (!isAdmin) return;
+    let seenIds: Set<number> | null = null;
+    try {
+      const stored = localStorage.getItem(SEEN_OPEN_IDS_KEY);
+      if (stored) seenIds = new Set(JSON.parse(stored));
+    } catch { /* localStorage unavailable — treat as first run */ }
+
+    const check = async () => {
+      const res = await fetch("/api/vendor-payment?status=Open");
+      if (!res.ok) return;
+      const openRows: PaymentRow[] = await res.json();
+      const currentIds = new Set(openRows.map((r) => r.id));
+
+      if (seenIds) {
+        const newOnes = openRows.filter((r) => !seenIds!.has(r.id));
+        for (const r of newOnes) {
+          const text = `${r.vendorName} — ${fmtMoney(r.amount)}${r.urgency === "Urgent" ? " (URGENT)" : ""}`;
+          pushToast(`New payment request: ${text}`);
+        }
+      }
+      seenIds = currentIds;
+      try { localStorage.setItem(SEEN_OPEN_IDS_KEY, JSON.stringify([...currentIds])); } catch { /* ignore */ }
+    };
+
+    check();
+    const id = setInterval(check, 20000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   const del = async (id: number) => {
     const res = await fetch(`/api/vendor-payment/${id}`, { method: "DELETE" });
@@ -151,6 +194,16 @@ export default function VendorPaymentPage() {
 
   return (
     <div>
+      {toasts.length > 0 && (
+        <div style={{ position: "fixed", top: 18, right: 18, zIndex: 100, display: "flex", flexDirection: "column", gap: 8, maxWidth: 320 }}>
+          {toasts.map((t) => (
+            <div key={t.id} style={{ background: C.ink, color: "#fff", padding: "12px 14px", borderRadius: 8, fontSize: 13, boxShadow: "0 8px 20px rgba(0,0,0,0.25)" }}>
+              {t.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       <SectionHead
         title="Vendor Payment"
         sub="Type straight into the grid to raise a request — Admin approves, pays and closes each one"
