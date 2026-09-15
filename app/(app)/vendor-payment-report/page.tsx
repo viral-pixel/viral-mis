@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Download, ChevronDown, ChevronRight } from "lucide-react";
 import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select } from "@/app/components/ui";
 import { C } from "@/app/lib/constants";
 import { IndianRupee, ListChecks, Building2 } from "lucide-react";
@@ -21,6 +21,13 @@ function fmtDate(d: string | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
+// Matches collectVendorPaymentReport's own grouping date (datePaid, falling
+// back to paymentDate) so the drill-down here shows exactly the entries
+// that made up that row's count — never a mismatched subset.
+function entryMonthKey(e: EntryRow) {
+  const d = new Date(e.datePaid ?? e.paymentDate);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
 const REPORT_TYPES = [
   ["vendor", "Vendor-wise"],
@@ -34,6 +41,8 @@ export default function VendorPaymentReportPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [data, setData] = useState<{ entries: EntryRow[]; byVendor: VendorWiseRow[]; byMonth: MonthWiseRow[] } | null>(null);
+  const [expandedVendor, setExpandedVendor] = useState<string | null>(null);
+  const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -45,6 +54,8 @@ export default function VendorPaymentReportPage() {
 
   useEffect(() => {
     setData(null);
+    setExpandedVendor(null);
+    setExpandedMonth(null);
     fetch(`/api/vendor-payment-report?${qs}`).then((r) => r.json()).then(setData);
   }, [qs]);
 
@@ -89,28 +100,57 @@ export default function VendorPaymentReportPage() {
       {data === null ? <Empty text="Loading…" /> : reportType === "vendor" ? (
         data.byVendor.length === 0 ? <Empty text="No payments for this filter." /> : (
           <Table>
-            <thead><tr><Th>Vendor</Th><Th>Type</Th><Th>Payments</Th><Th>Total Paid</Th><Th>Last Payment</Th></tr></thead>
+            <thead><tr><Th /><Th>Vendor</Th><Th>Type</Th><Th>Payments</Th><Th>Total Paid</Th><Th>Last Payment</Th></tr></thead>
             <tbody>
-              {data.byVendor.map((v) => (
-                <tr key={v.vendorName}>
-                  <Td>{v.vendorName}</Td><Td>{v.vendorType || "—"}</Td><Td>{v.count}</Td>
-                  <Td style={{ fontWeight: 600 }}>{fmtMoney(v.totalPaid)}</Td><Td>{fmtDate(v.lastPaymentDate)}</Td>
-                </tr>
-              ))}
+              {data.byVendor.map((v) => {
+                const isOpen = expandedVendor === v.vendorName;
+                return (
+                  <Fragment key={v.vendorName}>
+                    <tr onClick={() => setExpandedVendor(isOpen ? null : v.vendorName)} style={{ cursor: "pointer" }}>
+                      <Td>{isOpen ? <ChevronDown size={14} color={C.sub} /> : <ChevronRight size={14} color={C.sub} />}</Td>
+                      <Td>{v.vendorName}</Td><Td>{v.vendorType || "—"}</Td>
+                      <Td style={{ color: C.teal, fontWeight: 600, textDecoration: "underline" }}>{v.count}</Td>
+                      <Td style={{ fontWeight: 600 }}>{fmtMoney(v.totalPaid)}</Td><Td>{fmtDate(v.lastPaymentDate)}</Td>
+                    </tr>
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: 0, background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                          <EntryMiniTable entries={data.entries.filter((e) => e.vendorName === v.vendorName)} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </Table>
         )
       ) : reportType === "month" ? (
         data.byMonth.length === 0 ? <Empty text="No payments for this filter." /> : (
           <Table>
-            <thead><tr><Th>Month</Th><Th>Payments</Th><Th>Normal</Th><Th>Urgent</Th><Th>Total</Th></tr></thead>
+            <thead><tr><Th /><Th>Month</Th><Th>Payments</Th><Th>Normal</Th><Th>Urgent</Th><Th>Total</Th></tr></thead>
             <tbody>
-              {data.byMonth.map((m) => (
-                <tr key={m.monthKey}>
-                  <Td>{m.monthLabel}</Td><Td>{m.count}</Td><Td>{fmtMoney(m.normalTotal)}</Td>
-                  <Td style={{ color: C.red }}>{fmtMoney(m.urgentTotal)}</Td><Td style={{ fontWeight: 600 }}>{fmtMoney(m.total)}</Td>
-                </tr>
-              ))}
+              {data.byMonth.map((m) => {
+                const isOpen = expandedMonth === m.monthKey;
+                return (
+                  <Fragment key={m.monthKey}>
+                    <tr onClick={() => setExpandedMonth(isOpen ? null : m.monthKey)} style={{ cursor: "pointer" }}>
+                      <Td>{isOpen ? <ChevronDown size={14} color={C.sub} /> : <ChevronRight size={14} color={C.sub} />}</Td>
+                      <Td>{m.monthLabel}</Td>
+                      <Td style={{ color: C.teal, fontWeight: 600, textDecoration: "underline" }}>{m.count}</Td>
+                      <Td>{fmtMoney(m.normalTotal)}</Td>
+                      <Td style={{ color: C.red }}>{fmtMoney(m.urgentTotal)}</Td><Td style={{ fontWeight: 600 }}>{fmtMoney(m.total)}</Td>
+                    </tr>
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={6} style={{ padding: 0, background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                          <EntryMiniTable entries={data.entries.filter((e) => entryMonthKey(e) === m.monthKey)} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </Table>
         )
@@ -138,6 +178,34 @@ export default function VendorPaymentReportPage() {
           </Table>
         )
       )}
+    </div>
+  );
+}
+
+// The drill-down shown inline when a Payments count is clicked — same shape
+// as the All Entries table, just scoped to whichever vendor/month row was
+// expanded, using the entries already fetched (no extra request).
+function EntryMiniTable({ entries }: { entries: EntryRow[] }) {
+  return (
+    <div style={{ padding: 12 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+        <thead>
+          <tr>
+            <Th>Payment Date</Th><Th>Date Paid</Th><Th>Amount</Th><Th>Approved</Th>
+            <Th>Pay Type</Th><Th>Urgency</Th><Th>Status</Th><Th>Remarks (Finance)</Th><Th>Remarks (Admin)</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => (
+            <tr key={e.id} style={{ background: e.urgency === "Urgent" ? C.redSoft : undefined }}>
+              <Td>{fmtDate(e.paymentDate)}</Td><Td>{fmtDate(e.datePaid)}</Td>
+              <Td>{fmtMoney(e.amount)}</Td><Td>{e.approvedAmount != null ? fmtMoney(e.approvedAmount) : "—"}</Td>
+              <Td>{e.paymentType}</Td><Td>{e.urgency}</Td><Td>{e.status}</Td>
+              <Td>{e.remarksFinance || "—"}</Td><Td>{e.remarksAdmin || "—"}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
