@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings, PieChart } from "lucide-react";
 import { C, FONT_HEAD } from "@/app/lib/constants";
 import { SUBMODULE_ROUTES } from "@/app/lib/subModuleRoutes";
+import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
 
 interface SubModule { id: number; name: string; slug: string }
 interface ModuleWithSub { id: number; name: string; subModules: SubModule[] }
@@ -56,6 +57,12 @@ export function Shell({ children }: { children: ReactNode }) {
               const href = SUBMODULE_ROUTES[sm.slug] ?? "#";
               return <NavLink key={sm.id} href={href} label={sm.name} icon={Layers} pathname={pathname} />;
             })}
+            {/* Vendor Payment Report is a report, not a sub-module, but
+                belongs right next to Vendor Payment for whoever has that
+                module — shared by Sandip and Admin, not admin-only. */}
+            {m.subModules.some((sm) => sm.slug === VENDOR_PAYMENT_SUBMODULE_SLUG) && (
+              <NavLink href="/vendor-payment-report" label="Vendor Payment Report" icon={PieChart} pathname={pathname} />
+            )}
           </div>
         ))}
 
@@ -65,7 +72,6 @@ export function Shell({ children }: { children: ReactNode }) {
               My Reports
             </div>
             <NavLink href="/admin/vegetable-analysis" label="Vegetable Cost Analysis" icon={PieChart} pathname={pathname} />
-            <NavLink href="/admin/vendor-payment-report" label="Vendor Payment Report" icon={PieChart} pathname={pathname} />
           </div>
         )}
 

@@ -45,7 +45,7 @@ export default function VendorPaymentReportPage() {
 
   useEffect(() => {
     setData(null);
-    fetch(`/api/admin/vendor-payment-report?${qs}`).then((r) => r.json()).then(setData);
+    fetch(`/api/vendor-payment-report?${qs}`).then((r) => r.json()).then(setData);
   }, [qs]);
 
   const grandTotal = data ? data.entries.reduce((s, e) => s + (e.approvedAmount ?? e.amount), 0) : 0;
@@ -55,9 +55,9 @@ export default function VendorPaymentReportPage() {
     <div>
       <SectionHead
         title="Vendor Payment Report"
-        sub="Private view, admin only — vendor-wise and month-wise breakdowns of payments made, with full entries"
+        sub="Vendor-wise and month-wise breakdowns of payments made, with full entries — shared by Sandip and Admin"
         action={
-          <a href={`/api/admin/vendor-payment-report/export?${qs}`} style={{ textDecoration: "none" }}>
+          <a href={`/api/vendor-payment-report/export?${qs}`} style={{ textDecoration: "none" }}>
             <Btn variant="ghost"><Download size={15} /> Export Excel (all 3 reports)</Btn>
           </a>
         }
