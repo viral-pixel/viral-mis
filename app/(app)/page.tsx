@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, XCircle, FileStack } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { SectionHead, StatCard, Empty } from "@/app/components/ui";
 import { ReminderList } from "@/app/components/ReminderList";
-import { C, FONT_BODY } from "@/app/lib/constants";
+import { C, FONT_BODY, CHART_COLORS } from "@/app/lib/constants";
 import { EXPIRY_STATUS_LABEL, EXPIRY_STATUS_STYLE, type ExpiryReminder } from "@/app/lib/expiry";
 import { COMPLIANCE_SUBMODULE_SLUG } from "@/app/lib/complianceEntities";
 import type { ComplianceStats } from "@/app/lib/complianceReminders";
@@ -67,7 +67,11 @@ export default function DashboardPage() {
               <XAxis type="number" tick={{ fontFamily: FONT_BODY, fontSize: 11, fill: C.sub }} allowDecimals={false} />
               <YAxis type="category" dataKey="label" width={170} tick={{ fontFamily: FONT_BODY, fontSize: 11.5, fill: C.ink }} />
               <Tooltip contentStyle={{ fontFamily: FONT_BODY, fontSize: 12.5, borderRadius: 8, border: `1px solid ${C.border}` }} />
-              <Bar dataKey="count" fill={C.teal} radius={[0, 4, 4, 0]} />
+              <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                {compliance.recordsByEntity.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartPanel>

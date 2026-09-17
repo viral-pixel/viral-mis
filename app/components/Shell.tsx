@@ -37,9 +37,14 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <div style={{ width: 240, background: C.sidebar, flexShrink: 0, display: "flex", flexDirection: "column", padding: "18px 10px", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
-        <div style={{ padding: "4px 10px 18px" }}>
-          <div style={{ fontFamily: FONT_HEAD, color: "#fff", fontSize: 17, letterSpacing: "0.03em", textTransform: "uppercase" }}>NCS MIS</div>
-          <div style={{ color: "#8FA69F", fontSize: 11, marginTop: 2 }}>{user?.isAdmin ? "Admin · all modules" : "Your modules"}</div>
+        <div style={{ padding: "4px 10px 18px", display: "flex", alignItems: "center", gap: 9 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: C.teal, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 8px ${C.teal}66` }}>
+            <span style={{ fontFamily: FONT_HEAD, color: "#fff", fontSize: 15 }}>N</span>
+          </div>
+          <div>
+            <div style={{ fontFamily: FONT_HEAD, color: "#fff", fontSize: 17, letterSpacing: "0.03em", textTransform: "uppercase" }}>NCS MIS</div>
+            <div style={{ color: "#8FA69F", fontSize: 11 }}>{user?.isAdmin ? "Admin · all modules" : "Your modules"}</div>
+          </div>
         </div>
 
         <NavLink href="/" label="Dashboard" icon={LayoutDashboard} pathname={pathname} exact />
@@ -47,7 +52,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
         {modules.map((m) => (
           <div key={m.id} style={{ marginTop: 14 }}>
-            <div style={{ padding: "0 10px 4px", color: "#6C817B", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <div style={{ padding: "0 10px 4px", color: C.sidebarLabel, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
               {m.name}
             </div>
             {m.subModules.length === 0 && (
@@ -68,7 +73,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
         {user?.isAdmin && (
           <div style={{ marginTop: 14 }}>
-            <div style={{ padding: "0 10px 4px", color: "#6C817B", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <div style={{ padding: "0 10px 4px", color: C.sidebarLabel, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
               My Reports
             </div>
             <NavLink href="/admin/vegetable-analysis" label="Vegetable Cost Analysis" icon={PieChart} pathname={pathname} />
@@ -77,7 +82,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
         {user?.isAdmin && (
           <div style={{ marginTop: 14 }}>
-            <div style={{ padding: "0 10px 4px", color: "#6C817B", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <div style={{ padding: "0 10px 4px", color: C.sidebarLabel, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
               Administration
             </div>
             <NavLink href="/admin/users" label="Users & Access" icon={Users} pathname={pathname} />
@@ -107,8 +112,8 @@ function NavLink({ href, label, icon: Icon, pathname, exact }: { href: string; l
       href={href}
       style={{
         display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px",
-        background: active ? C.sidebarSoft : "transparent", borderRadius: 7,
-        color: active ? "#fff" : "#A9B7B2", cursor: "pointer", fontSize: 13.5, fontWeight: 500,
+        background: active ? C.sidebarActive : "transparent", borderRadius: 7,
+        color: active ? "#fff" : "#A9B7B2", cursor: "pointer", fontSize: 13.5, fontWeight: active ? 600 : 500,
         marginBottom: 2, borderLeft: active ? `3px solid ${C.teal}` : "3px solid transparent",
         textAlign: "left", textDecoration: "none",
       }}

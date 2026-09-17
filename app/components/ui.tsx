@@ -200,16 +200,16 @@ export function StatCard({
   tint: string;
 }) {
   return (
-    <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px", flex: "1 1 160px", minWidth: 150 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <div style={{ width: 26, height: 26, borderRadius: 6, background: tint + "22", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Icon size={15} color={tint} />
+    <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderTop: `3px solid ${tint}`, borderRadius: 10, padding: "14px 16px", flex: "1 1 160px", minWidth: 150 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: tint, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 6px ${tint}55` }}>
+          <Icon size={15} color="#fff" />
         </div>
         <span style={{ fontFamily: FONT_BODY, fontSize: 11.5, color: C.sub, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em" }}>
           {label}
         </span>
       </div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 26, color: C.ink }}>{value}</div>
+      <div style={{ fontFamily: FONT_HEAD, fontSize: 27, color: C.ink }}>{value}</div>
     </div>
   );
 }
@@ -217,11 +217,14 @@ export function StatCard({
 export function SectionHead({ title, sub, action }: { title: string; sub?: ReactNode; action?: ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
-      <div>
-        <h2 style={{ margin: 0, fontFamily: FONT_HEAD, fontSize: 24, color: C.ink, textTransform: "uppercase", letterSpacing: "0.02em" }}>
-          {title}
-        </h2>
-        {sub && <div style={{ color: C.sub, fontSize: 13, marginTop: 2 }}>{sub}</div>}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ width: 5, height: 26, marginTop: 3, borderRadius: 3, background: C.teal, flexShrink: 0 }} />
+        <div>
+          <h2 style={{ margin: 0, fontFamily: FONT_HEAD, fontSize: 24, color: C.ink, textTransform: "uppercase", letterSpacing: "0.02em" }}>
+            {title}
+          </h2>
+          {sub && <div style={{ color: C.sub, fontSize: 13, marginTop: 2 }}>{sub}</div>}
+        </div>
       </div>
       {action}
     </div>
