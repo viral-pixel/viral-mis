@@ -350,7 +350,10 @@ function OverviewTab({ items, vendors, onVendorAdded }: { items: VegItem[]; vend
               </tr>
             </thead>
             <tbody>
-              {overview.map((r) => (
+              {/* Built ascending (each row's "vs Prior" is computed walking
+                  forward and baked into the row) — reversed only here, for
+                  display, so the most recent month reads at the top. */}
+              {[...overview].reverse().map((r) => (
                 <tr key={r.monthKey}>
                   <Td>{r.monthLabel}</Td>
                   <Td>{r.totalQty != null ? r.totalQty.toLocaleString("en-IN") : "—"}</Td>

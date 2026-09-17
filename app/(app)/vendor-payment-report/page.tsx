@@ -130,7 +130,7 @@ export default function VendorPaymentReportPage() {
           <Table>
             <thead><tr><Th /><Th>Month</Th><Th>Payments</Th><Th>Normal</Th><Th>Urgent</Th><Th>Total</Th></tr></thead>
             <tbody>
-              {data.byMonth.map((m) => {
+              {[...data.byMonth].reverse().map((m) => {
                 const isOpen = expandedMonth === m.monthKey;
                 return (
                   <Fragment key={m.monthKey}>
