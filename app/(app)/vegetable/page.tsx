@@ -356,7 +356,7 @@ function OverviewTab({ items, vendors, onVendorAdded }: { items: VegItem[]; vend
               {[...overview].reverse().map((r) => (
                 <tr key={r.monthKey}>
                   <Td>{r.monthLabel}</Td>
-                  <Td>{r.totalQty != null ? r.totalQty.toLocaleString("en-IN") : "—"}</Td>
+                  <Td>{r.totalQty != null ? Math.round(r.totalQty).toLocaleString("en-IN") : "—"}</Td>
                   <Td>{fmtMoney(r.totalAmount)}</Td>
                   <Td>{r.avgRate != null ? `₹${r.avgRate}` : "—"}</Td>
                   <Td><PctBadge value={r.qtyChangePct} /></Td>
