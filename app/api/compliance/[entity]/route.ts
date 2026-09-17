@@ -15,7 +15,25 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ent
   if (!auth.ok) return auth.response;
 
   const model = (prisma as unknown as Record<string, { findMany: (args: unknown) => Promise<unknown[]> }>)[entity.model];
-  const rows = await model.findMany({ orderBy: { id: "desc" } });
+  const rows = await model.findMany({ orderBy: { id: "desc" } }) as Record<string, unknown>[];
+
+  // "Recent at top" means by the date this table actually tracks (its first
+  // expiryField — e.g. FSSAI End, Rent Valid Till), not import/row order,
+  // which is all `id desc` gave before. Records with no date for that field
+  // can't be placed by recency, so they sort to the bottom, most-recently-
+  // added first among themselves (id desc, already the fetch order).
+  const dateKey = entity.expiryFields[0]?.key;
+  if (dateKey) {
+    rows.sort((a, b) => {
+      const da = a[dateKey] ? new Date(a[dateKey] as string).getTime() : null;
+      const db = b[dateKey] ? new Date(b[dateKey] as string).getTime() : null;
+      if (da === null && db === null) return 0;
+      if (da === null) return 1;
+      if (db === null) return -1;
+      return db - da;
+    });
+  }
+
   return NextResponse.json(rows);
 }
 
