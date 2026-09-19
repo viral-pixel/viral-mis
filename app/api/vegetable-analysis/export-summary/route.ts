@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/app/lib/authz";
+import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { VEG_COST_ANALYSIS_SUBMODULE_SLUG } from "@/app/lib/managementReportsMeta";
 import { collectAdminVegSummary, AdminVegMonthRow } from "@/app/lib/vegetableAdminAnalytics";
 import { buildXlsxResponseBuffer, xlsxDownloadHeaders } from "@/app/lib/excelIO";
 
@@ -39,7 +40,7 @@ const COLUMNS: Record<FieldGroup, { header: string; get: (r: AdminVegMonthRow) =
 };
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireModuleAccessBySubModuleSlug(VEG_COST_ANALYSIS_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const params = req.nextUrl.searchParams;

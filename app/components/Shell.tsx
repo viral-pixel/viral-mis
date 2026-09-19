@@ -74,15 +74,6 @@ export function Shell({ children }: { children: ReactNode }) {
         {user?.isAdmin && (
           <div style={{ marginTop: 14 }}>
             <div style={{ padding: "0 10px 4px", color: C.sidebarLabel, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              My Reports
-            </div>
-            <NavLink href="/admin/vegetable-analysis" label="Vegetable Cost Analysis" icon={PieChart} pathname={pathname} />
-          </div>
-        )}
-
-        {user?.isAdmin && (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ padding: "0 10px 4px", color: C.sidebarLabel, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
               Administration
             </div>
             <NavLink href="/admin/users" label="Users & Access" icon={Users} pathname={pathname} />
@@ -106,7 +97,10 @@ export function Shell({ children }: { children: ReactNode }) {
 }
 
 function NavLink({ href, label, icon: Icon, pathname, exact }: { href: string; label: string; icon: typeof LayoutDashboard; pathname: string; exact?: boolean }) {
-  const active = exact ? pathname === href : pathname.startsWith(href);
+  // Match on a whole path segment, not a raw prefix — otherwise "/vegetable"
+  // also lights up on "/vegetable-analysis", "/vendor-payment" on
+  // "/vendor-payment-report", etc.
+  const active = exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
   return (
     <Link
       href={href}

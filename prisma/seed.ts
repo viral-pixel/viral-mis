@@ -5,6 +5,7 @@ import { PURCHASE_SUBMODULE_SLUG, PURCHASE_GROUPS, subItemsForGroup } from "../a
 import { VEGETABLE_SUBMODULE_SLUG, VEGETABLE_ITEMS } from "../app/lib/vegetableItems";
 import { ROTI_SUBMODULE_SLUG, ROTI_DEFAULT_SITES, ROTI_DEFAULT_MEAL_TYPES, ROTI_DEFAULT_CATEGORIES } from "../app/lib/rotiMeta";
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "../app/lib/vendorPaymentMeta";
+import { MANAGEMENT_MODULE_NAME, VEG_COST_ANALYSIS_SUBMODULE_SLUG } from "../app/lib/managementReportsMeta";
 
 const prisma = new PrismaClient();
 
@@ -121,6 +122,22 @@ async function main() {
     },
   });
 
+  const managementModule = await prisma.module.upsert({
+    where: { name: MANAGEMENT_MODULE_NAME },
+    update: {},
+    create: { name: MANAGEMENT_MODULE_NAME },
+  });
+
+  await prisma.subModule.upsert({
+    where: { slug: VEG_COST_ANALYSIS_SUBMODULE_SLUG },
+    update: {},
+    create: {
+      moduleId: managementModule.id,
+      name: "Vegetable Cost Analysis",
+      slug: VEG_COST_ANALYSIS_SUBMODULE_SLUG,
+    },
+  });
+
   const existingAdmin = await prisma.user.findUnique({ where: { username: "admin" } });
   const adminPassword = existingAdmin ? null : randomPassword();
   const admin = await prisma.user.upsert({
@@ -207,7 +224,7 @@ async function main() {
     },
   });
 
-  for (const moduleId of [ketanModule.id, kiranModule.id]) {
+  for (const moduleId of [ketanModule.id, kiranModule.id, managementModule.id]) {
     await prisma.userModuleAccess.upsert({
       where: { userId_moduleId: { userId: rajivUser.id, moduleId } },
       update: {},
