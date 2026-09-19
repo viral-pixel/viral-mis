@@ -26,9 +26,9 @@ function fmtDay(iso: string) {
 }
 
 const ROLE_NOTE: Record<Role, string> = {
-  admin: "You can upload, edit and delete, and raise queries.",
-  raiser: "You can view everything and raise queries month-wise. Sandip answers them.",
-  responder: "You can view everything and answer queries with Send & Close.",
+  admin: "You can upload, edit and delete, and raise queries. Rajiv's queries come to you; yours are not visible to him.",
+  raiser: "You can view everything and raise queries month-wise. You see your own queries and Sandip's replies to them.",
+  responder: "You can view everything and answer every query — Admin's and Rajiv's — with Send & Close.",
 };
 
 export default function MiscExpensesPage() {
