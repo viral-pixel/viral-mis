@@ -191,6 +191,30 @@ async function main() {
     create: { userId: sandipUser.id, moduleId: sandipModule.id },
   });
 
+  // Rajiv (business partner): every module EXCEPT Sandip Reports (Vendor
+  // Payment + its report). Not an admin, so no Users & Access / Modules /
+  // admin-only pages; he can change his own password from Settings.
+  const existingRajiv = await prisma.user.findUnique({ where: { username: "rajiv" } });
+  const rajivPassword = existingRajiv ? null : randomPassword();
+  const rajivUser = await prisma.user.upsert({
+    where: { username: "rajiv" },
+    update: {},
+    create: {
+      username: "rajiv",
+      displayName: "Rajiv",
+      isAdmin: false,
+      passwordHash: await bcrypt.hash(rajivPassword ?? "", 10),
+    },
+  });
+
+  for (const moduleId of [ketanModule.id, kiranModule.id]) {
+    await prisma.userModuleAccess.upsert({
+      where: { userId_moduleId: { userId: rajivUser.id, moduleId } },
+      update: {},
+      create: { userId: rajivUser.id, moduleId },
+    });
+  }
+
   console.log("Seed complete.");
   console.log("Module:", ketanModule.name, "| SubModules:", COMPLIANCE_SUBMODULE_SLUG, PURCHASE_SUBMODULE_SLUG, VEGETABLE_SUBMODULE_SLUG);
   console.log("Module:", kiranModule.name, "| SubModules:", ROTI_SUBMODULE_SLUG);
@@ -206,6 +230,8 @@ async function main() {
   else console.log("kiran user already existed, password unchanged");
   if (sandipPassword) console.log(`New sandip login -> username: sandip  password: ${sandipPassword}`);
   else console.log("sandip user already existed, password unchanged");
+  if (rajivPassword) console.log(`New rajiv login -> username: rajiv  password: ${rajivPassword}`);
+  else console.log("rajiv user already existed, password unchanged");
   console.log(`admin id=${admin.id}`);
 }
 
