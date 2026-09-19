@@ -276,6 +276,39 @@ function AnalysisTab({ groups }: { groups: PurchaseGroup[] }) {
             </ChartPanel>
           )}
 
+          <ChartPanel
+            title="Month-wise Amount & Quantity"
+            sub={`${trendSubItem || selectedGroup?.name || ""} — most recent month first`}
+            style={{ marginBottom: 16 }}
+          >
+            {!trend ? (
+              <Empty text="Loading…" />
+            ) : trend.length === 0 ? (
+              <Empty text="No data yet for this commodity." />
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Month</Th>
+                    {selectedGroup?.hasAmount && <Th>Amount</Th>}
+                    {selectedGroup?.hasQuantity && <Th>Quantity{selectedGroup.unit ? ` (${selectedGroup.unit})` : ""}</Th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* trend is built oldest-first for the charts — reversed
+                      here only, for display, so the latest month leads. */}
+                  {[...trend].reverse().map((t) => (
+                    <tr key={t.monthLabel}>
+                      <Td>{t.monthLabel}</Td>
+                      {selectedGroup?.hasAmount && <Td>{t.amount != null ? fmtMoney(t.amount) : "—"}</Td>}
+                      {selectedGroup?.hasQuantity && <Td>{t.quantity != null ? Math.round(t.quantity).toLocaleString("en-IN") : "—"}</Td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </ChartPanel>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <ChartPanel title="Amount Analysis" sub={`${trendSubItem || selectedGroup?.name || ""} — ₹ spent per month`}>
               {!selectedGroup?.hasAmount ? (
