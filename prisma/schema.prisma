@@ -583,3 +583,38 @@ model VendorPaymentEntry {
   @@index([paymentDate])
   @@index([status])
 }
+
+// ---- SubModule: "Miscellaneous Expenses" (Company Expenses module) ----
+// One row per month (amount + the free-text bifurcation the Excel carries
+// in its Remarks column). Uploaded from Excel by Admin; re-uploading a
+// month updates it (month is unique). Queries hang off a month: Admin or
+// Rajiv raise them, the finance manager (Sandip) answers and closes.
+model MiscExpense {
+  id          Int      @id @default(autoincrement())
+  month       DateTime @unique // normalized to the 1st of the month, UTC
+  amount      Float
+  remarks     String   @default("") // multi-line breakdown, newlines preserved
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  queries MiscExpenseQuery[]
+}
+
+model MiscExpenseQuery {
+  id           Int         @id @default(autoincrement())
+  expenseId    Int
+  expense      MiscExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  question     String
+  raisedBy     String // username
+  raisedByName String
+  raisedAt     DateTime    @default(now())
+  status       String      @default("Open") // "Open" | "Closed"
+  response     String      @default("")
+  respondedBy  String      @default("") // display name of whoever closed it
+  closedAt     DateTime?
+
+  @@index([expenseId])
+  @@index([status])
+}

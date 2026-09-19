@@ -6,6 +6,7 @@ import { VEGETABLE_SUBMODULE_SLUG, VEGETABLE_ITEMS } from "../app/lib/vegetableI
 import { ROTI_SUBMODULE_SLUG, ROTI_DEFAULT_SITES, ROTI_DEFAULT_MEAL_TYPES, ROTI_DEFAULT_CATEGORIES } from "../app/lib/rotiMeta";
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "../app/lib/vendorPaymentMeta";
 import { MANAGEMENT_MODULE_NAME, VEG_COST_ANALYSIS_SUBMODULE_SLUG } from "../app/lib/managementReportsMeta";
+import { MISC_MODULE_NAME, MISC_SUBMODULE_SLUG } from "../app/lib/miscExpensesMeta";
 
 const prisma = new PrismaClient();
 
@@ -138,6 +139,22 @@ async function main() {
     },
   });
 
+  const companyModule = await prisma.module.upsert({
+    where: { name: MISC_MODULE_NAME },
+    update: {},
+    create: { name: MISC_MODULE_NAME },
+  });
+
+  await prisma.subModule.upsert({
+    where: { slug: MISC_SUBMODULE_SLUG },
+    update: {},
+    create: {
+      moduleId: companyModule.id,
+      name: "Miscellaneous Expenses",
+      slug: MISC_SUBMODULE_SLUG,
+    },
+  });
+
   const existingAdmin = await prisma.user.findUnique({ where: { username: "admin" } });
   const adminPassword = existingAdmin ? null : randomPassword();
   const admin = await prisma.user.upsert({
@@ -223,6 +240,16 @@ async function main() {
       passwordHash: await bcrypt.hash(rajivPassword ?? "", 10),
     },
   });
+
+  // Miscellaneous Expenses: Sandip (answers queries) and Rajiv (raises them)
+  // both get view access; Admin has everything by default.
+  for (const userId of [rajivUser.id, sandipUser.id]) {
+    await prisma.userModuleAccess.upsert({
+      where: { userId_moduleId: { userId, moduleId: companyModule.id } },
+      update: {},
+      create: { userId, moduleId: companyModule.id },
+    });
+  }
 
   for (const moduleId of [ketanModule.id, kiranModule.id, managementModule.id]) {
     await prisma.userModuleAccess.upsert({

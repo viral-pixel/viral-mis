@@ -8,6 +8,7 @@ import { VEGETABLE_SUBMODULE_SLUG } from "@/app/lib/vegetableItems";
 import { ROTI_SUBMODULE_SLUG } from "@/app/lib/rotiMeta";
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
 import { VEG_COST_ANALYSIS_SUBMODULE_SLUG } from "@/app/lib/managementReportsMeta";
+import { MISC_SUBMODULE_SLUG } from "@/app/lib/miscExpensesMeta";
 
 export const SUBMODULE_ROUTES: Record<string, string> = {
   [COMPLIANCE_SUBMODULE_SLUG]: "/compliance",
@@ -16,4 +17,5 @@ export const SUBMODULE_ROUTES: Record<string, string> = {
   [ROTI_SUBMODULE_SLUG]: "/roti",
   [VENDOR_PAYMENT_SUBMODULE_SLUG]: "/vendor-payment",
   [VEG_COST_ANALYSIS_SUBMODULE_SLUG]: "/vegetable-analysis",
+  [MISC_SUBMODULE_SLUG]: "/misc-expenses",
 };
