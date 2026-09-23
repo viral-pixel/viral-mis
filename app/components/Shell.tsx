@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings, PieChart } from "lucide-react";
+import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings, PieChart, Calculator } from "lucide-react";
 import { C, FONT_HEAD } from "@/app/lib/constants";
 import { SUBMODULE_ROUTES } from "@/app/lib/subModuleRoutes";
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
@@ -87,6 +87,9 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
             <NavLink href="/admin/users" label="Users & Access" icon={Users} pathname={pathname} />
             <NavLink href="/admin/modules" label="Modules" icon={ListTree} pathname={pathname} />
+            {/* Personal reference, not tied to any employee's module — admin
+                only, same as the rest of this section. */}
+            <NavLink href="/costing" label="Costing Reference" icon={Calculator} pathname={pathname} />
           </div>
         )}
 

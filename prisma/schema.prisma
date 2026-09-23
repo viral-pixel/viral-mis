@@ -717,3 +717,92 @@ model AlkeshWeeklyTarget {
   monthlyTarget Float
   updatedAt     DateTime @updatedAt
 }
+
+// ---- Costing Reference (Farsan, Sweets, ...) — Admin-only ----
+// Source: standalone per-item costing sheets (e.g. "Farsan Cost PP"), not
+// tied to any employee's module — a personal reference the user keeps and
+// updates as vendor rates change (2026-09-23: "rates are subject to change
+// and may not be exact but I want these details to be available"). Derived
+// figures (cost per person, wastage, total) are computed live in
+// app/lib/costingCalc.ts from `ratePerUnit`, never stored, so editing the
+// rate recalculates everything instead of going stale like the source
+// sheet's copy-pasted formulas would.
+model CostingItem {
+  id       Int    @id @default(autoincrement())
+  category String // "Farsan" | "Sweets" | ... free text w/ suggestions, more added the same way as they're shared
+  name     String
+
+  ratePerUnit          Float // ₹ per Kg or per Piece, whichever costBasis below applies
+  servingQtyLabel      String @default("") // "70 gm", "2 Nos." — kept as typed, not parsed
+  servingsPerUnitLabel String @default("") // "14 Persons", "1 Person" — kept as typed
+  // How ratePerUnit turns into a per-person cost — the source sheet used two
+  // different formulas depending on whether an item is sold by weight
+  // (divide rate by servings-per-kg) or by piece (multiply rate by pieces
+  // per serving), e.g. Dhokla = rate/14 but Chinese Samosa = rate*2.
+  costBasis        String @default("PER_KG") // "PER_KG" (divide by conversionFactor) | "PER_PIECE" (multiply by conversionFactor)
+  conversionFactor Float  @default(1)
+  wastagePct       Float  @default(10)
+
+  countPerPlate      String @default("") // "2 NOS", "-", free text
+  accompanimentsCost Float? // null = not yet costed ("Pending" in the source)
+  tadkaCost          Float? // null = not yet costed
+
+  // The date these rates were actually worked out — distinct from
+  // createdAt/updatedAt (which are just row audit timestamps). Editable, so
+  // when the user revises a rate later they can set this to the new
+  // as-of date and keep a real sense of "when did this last change" even
+  // though old values aren't kept as history (2026-09-23, user's request:
+  // "so in future if these things change I have the perspective of the same").
+  asOfDate DateTime @default(now())
+
+  sortOrder Int    @default(0)
+  remarks   String @default("")
+
+  enteredBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
+// Sweets costing works differently from Farsan — a full ingredient list per
+// recipe (batch cost ÷ batch qty = cost per unit, × a serving fraction),
+// not a single rate — so it gets its own two models instead of forcing it
+// into CostingItem's shape. Verified against the source sheet (2026-09-23):
+// this same formula, with the source's own wastage line included as just
+// another ingredient row, reproduces every one of its 9 sweets' final
+// per-serving figures exactly.
+model CostingRecipe {
+  id       Int    @id @default(autoincrement())
+  category String // "Sweets" — same free-text-category pattern as CostingItem
+  name     String
+
+  batchQty                Float // the denominator the source itself divided by, e.g. 550 (Kg), 11500 (wastage-adjusted Nos)
+  batchUnit               String @default("KG") // "KG" | "Nos" | "Ltr" — as typed
+  servingLabel            String @default("") // "70 GM", "1 Pc (35g)" — as typed
+  servingConversionFactor Float  @default(1) // multiplies cost-per-batchUnit to get cost-per-serving (0.07 for 70gm-from-Kg, 1 when batchUnit already is the serving unit)
+
+  asOfDate DateTime @default(now())
+  remarks  String   @default("")
+
+  sortOrder Int    @default(0)
+  enteredBy String @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ingredients CostingRecipeIngredient[]
+
+  @@index([category])
+}
+
+model CostingRecipeIngredient {
+  id       Int           @id @default(autoincrement())
+  recipeId Int
+  recipe   CostingRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  name     String
+  qtyLabel String        @default("") // "150 KG", "90 LIT", "4 Person" — free text as typed, not parsed
+  amount   Float
+  sortOrder Int          @default(0)
+
+  @@index([recipeId])
+}
