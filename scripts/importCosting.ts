@@ -58,7 +58,7 @@ async function main() {
 
   const sweets: { name: string; batchQty: number; batchUnit: string; servingLabel: string; servingConversionFactor: number; ingredients: { name: string; qtyLabel: string; amount: number }[] }[] = [
     {
-      name: "Gulab Jamun", batchQty: 11500, batchUnit: "Nos", servingLabel: "1 Pc (35g)", servingConversionFactor: 1,
+      name: "Gulab Jamun", batchQty: 11500, batchUnit: "Nos", servingLabel: "2 Pc (70g)", servingConversionFactor: 2,
       ingredients: [
         { name: "Gulab Jamun Aata", qtyLabel: "75 Kg", amount: 22125 },
         { name: "Sugar", qtyLabel: "150 Kg", amount: 7050 },

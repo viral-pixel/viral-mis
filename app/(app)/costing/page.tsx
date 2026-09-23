@@ -12,9 +12,7 @@ function fmtMoney(n: number) {
 }
 function fmtDateDay(iso: string) {
   const d = new Date(iso);
-  const day = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
-  const weekday = d.toLocaleDateString("en-IN", { weekday: "short", timeZone: "UTC" });
-  return `${day} (${weekday})`;
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 function todayISO() {
   return new Date().toISOString();
