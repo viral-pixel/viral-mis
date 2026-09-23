@@ -7,6 +7,7 @@ import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings, PieCh
 import { C, FONT_HEAD } from "@/app/lib/constants";
 import { SUBMODULE_ROUTES } from "@/app/lib/subModuleRoutes";
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
+import { ALKESH_SUBMODULE_SLUG } from "@/app/lib/alkeshMeta";
 
 interface SubModule { id: number; name: string; slug: string }
 interface ModuleWithSub { id: number; name: string; subModules: SubModule[] }
@@ -69,6 +70,12 @@ export function Shell({ children }: { children: ReactNode }) {
                 module — shared by Sandip and Admin, not admin-only. */}
             {m.subModules.some((sm) => sm.slug === VENDOR_PAYMENT_SUBMODULE_SLUG) && (
               <NavLink href="/vendor-payment-report" label="Vendor Payment Report" icon={PieChart} pathname={pathname} />
+            )}
+            {/* Kitchen Weekly MIS analysis is Admin-only per the user's
+                explicit instruction — Alkesh gets the entry screens (above)
+                but not this, so it's hidden from the nav entirely for him. */}
+            {user?.isAdmin && m.subModules.some((sm) => sm.slug === ALKESH_SUBMODULE_SLUG) && (
+              <NavLink href="/alkesh-kitchen-mis" label="Kitchen MIS Analysis" icon={PieChart} pathname={pathname} />
             )}
           </div>
         ))}

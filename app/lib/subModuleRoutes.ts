@@ -9,6 +9,7 @@ import { ROTI_SUBMODULE_SLUG } from "@/app/lib/rotiMeta";
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
 import { VEG_COST_ANALYSIS_SUBMODULE_SLUG } from "@/app/lib/managementReportsMeta";
 import { MISC_SUBMODULE_SLUG } from "@/app/lib/miscExpensesMeta";
+import { ALKESH_SUBMODULE_SLUG } from "@/app/lib/alkeshMeta";
 
 export const SUBMODULE_ROUTES: Record<string, string> = {
   [COMPLIANCE_SUBMODULE_SLUG]: "/compliance",
@@ -18,4 +19,5 @@ export const SUBMODULE_ROUTES: Record<string, string> = {
   [VENDOR_PAYMENT_SUBMODULE_SLUG]: "/vendor-payment",
   [VEG_COST_ANALYSIS_SUBMODULE_SLUG]: "/vegetable-analysis",
   [MISC_SUBMODULE_SLUG]: "/misc-expenses",
+  [ALKESH_SUBMODULE_SLUG]: "/alkesh-kitchen",
 };

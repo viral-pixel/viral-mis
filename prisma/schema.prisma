@@ -624,3 +624,96 @@ model MiscExpenseQuery {
   @@index([expenseId])
   @@index([status])
 }
+
+// ---- SubModule: "Kitchen Weekly MIS" (Alkesh Reports module, Alkesh Labana) ----
+// Source: a 10-sheet weekly working file he prepares mid-month from vendor
+// invoices and stock checks — approximate on purpose, a pulse check, not a
+// reconciled figure (2026-09-23). Two of his ten sheets are dropped entirely
+// here: Roti and Vegetable are sourced live from Kiran's RotiLineItem and
+// Ketan's Vegetable data instead of a duplicate entry, since both are
+// already tracked there first-hand. Gas/Oil/Provision stay as Alkesh's own
+// entries here even though Ketan separately tracks the same commodities
+// monthly in Purchase & Consumption Costing — deliberately NOT linked
+// (user's explicit choice, 2026-09-23): Alkesh's numbers are an early,
+// rougher mid-month view; Ketan's are the month-end reconciled one. All
+// analysis/report views built on this data are Admin-only for now (user's
+// explicit instruction) — Alkesh only gets the entry screens.
+
+// MRP sheet + MRP MIS sheet combined into one entry: MRP MIS was just the
+// same transactions flattened for a pivot table, not separate data.
+model AlkeshMrpEntry {
+  id         Int      @id @default(autoincrement())
+  date       DateTime
+  vendorName String
+  category   String // Biscuit / Chocolate / Cold Drink / Ice Cream / Juice / Namkeen / ... free text w/ suggestions, matches source's ad hoc list
+  site       String // IBPL / INOX / Intas Matoda / SEZ Intas / TTEC / ... free text w/ suggestions
+  amount     Float
+  remarks    String   @default("")
+
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+  @@index([site])
+}
+
+// Milk sheet, simplified. `teaQty`/`pantryQty` replace what used to be a
+// plain milk figure plus a manually-remembered cell comment noting how much
+// went to Pantry — now a structured split so the per-cup tea ratio never
+// has to be corrected by hand again. Curd and Buttermilk have no tea/pantry
+// distinction (that split is milk-specific), so they're single quantities.
+model AlkeshMilkEntry {
+  id            Int      @id @default(autoincrement())
+  date          DateTime
+  site          String // Sez / Amneal / Intas / IBPL / Unison / Ttec / Finar / Veeglow / O2H / Inox Solar / CK ... free text w/ suggestions
+  milkTeaQty    Float    @default(0) // Ltr, used for tea/coffee
+  milkPantryQty Float    @default(0) // Ltr, diverted to Pantry — excluded from the tea per-cup ratio
+  curdQty       Float    @default(0) // Kg
+  buttermilkQty Float    @default(0) // pcs
+  remarks       String   @default("")
+
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([site])
+}
+
+// Gas, Oil, and the six Provision items (Atta/Rice/Besan/Maida/Sugar/Toor
+// Dal) share one shape — Date + Qty + Rate + Amt — so one model covers all
+// of them, keyed by `category`. Allowed values live in app/lib/alkeshMeta.ts,
+// not a separate master table — small, fixed list, same pattern as
+// PurchaseGroup.subItemsCsv elsewhere in this schema.
+model AlkeshCommodityEntry {
+  id       Int      @id @default(autoincrement())
+  date     DateTime
+  category String // "Gas" | "Oil" | "Atta" | "Rice" | "Besan" | "Maida" | "Sugar" | "Toor Dal"
+  quantity Float?
+  rate     Float?
+  amount   Float
+  remarks  String   @default("")
+
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+}
+
+// Admin-settable monthly targets shown against actuals on the Weekly MIS
+// report — mirrors the Target row Alkesh's sheet already had, but editable
+// instead of retyped every month. One row per tracked line; a line with no
+// row here just shows no target, same as the source left some blank.
+model AlkeshWeeklyTarget {
+  id            Int      @id @default(autoincrement())
+  category      String   @unique // "MRP" | "Milk" | "Gas" | "Provision" | "Vegetable" | "Curd" | "Buttermilk"
+  monthlyTarget Float
+  updatedAt     DateTime @updatedAt
+}

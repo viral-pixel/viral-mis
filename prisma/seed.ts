@@ -7,6 +7,7 @@ import { ROTI_SUBMODULE_SLUG, ROTI_DEFAULT_SITES, ROTI_DEFAULT_MEAL_TYPES, ROTI_
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "../app/lib/vendorPaymentMeta";
 import { MANAGEMENT_MODULE_NAME, VEG_COST_ANALYSIS_SUBMODULE_SLUG } from "../app/lib/managementReportsMeta";
 import { MISC_MODULE_NAME, MISC_SUBMODULE_SLUG } from "../app/lib/miscExpensesMeta";
+import { ALKESH_MODULE_NAME, ALKESH_SUBMODULE_SLUG } from "../app/lib/alkeshMeta";
 
 const prisma = new PrismaClient();
 
@@ -156,14 +157,23 @@ async function main() {
   });
 
   // Alkesh Reports: one of the original 6 person-based modules (2026-08-29
-  // design), only now actually being staffed. Module + login created ahead
-  // of its real sub-module content, same as the other placeholders were —
-  // no sub-modules yet, add them here once his actual tracking area (and
-  // ideally his own Excel, like everyone else's first module) is known.
+  // design). First real content landed 2026-09-23: Kitchen Weekly MIS
+  // (MRP, Milk & Dairy, Gas/Oil/Provision entry; Roti and Vegetable are
+  // sourced live from Kiran's and Ketan's modules instead of duplicated).
   const alkeshModule = await prisma.module.upsert({
-    where: { name: "Alkesh Reports" },
+    where: { name: ALKESH_MODULE_NAME },
     update: {},
-    create: { name: "Alkesh Reports" },
+    create: { name: ALKESH_MODULE_NAME },
+  });
+
+  await prisma.subModule.upsert({
+    where: { slug: ALKESH_SUBMODULE_SLUG },
+    update: {},
+    create: {
+      moduleId: alkeshModule.id,
+      name: "Kitchen Weekly MIS",
+      slug: ALKESH_SUBMODULE_SLUG,
+    },
   });
 
   const existingAdmin = await prisma.user.findUnique({ where: { username: "admin" } });
