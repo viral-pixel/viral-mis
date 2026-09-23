@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleReadAccess } from "@/app/lib/authz";
 import { ROTI_SUBMODULE_SLUG } from "@/app/lib/rotiMeta";
 import { computeRotiSummary, RotiLineInput } from "@/app/lib/rotiSummary";
 
@@ -17,7 +17,7 @@ import { computeRotiSummary, RotiLineInput } from "@/app/lib/rotiSummary";
 //     Category" stays a cross-category comparison even while one category
 //     is selected.
 export async function GET(req: NextRequest) {
-  const auth = await requireModuleAccessBySubModuleSlug(ROTI_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(ROTI_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const from = req.nextUrl.searchParams.get("from");

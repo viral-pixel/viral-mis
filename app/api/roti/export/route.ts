@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleReadAccess } from "@/app/lib/authz";
 import { ROTI_SUBMODULE_SLUG } from "@/app/lib/rotiMeta";
 import { buildXlsxResponseBuffer, xlsxDownloadHeaders } from "@/app/lib/excelIO";
 
@@ -9,7 +9,7 @@ import { buildXlsxResponseBuffer, xlsxDownloadHeaders } from "@/app/lib/excelIO"
 // round-trips cleanly through /api/roti/import. Optional ?from=&to=
 // (YYYY-MM-DD) narrows to a date range; omitted means everything.
 export async function GET(req: NextRequest) {
-  const auth = await requireModuleAccessBySubModuleSlug(ROTI_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(ROTI_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const from = req.nextUrl.searchParams.get("from");

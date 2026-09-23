@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleReadAccess } from "@/app/lib/authz";
 import { VEGETABLE_SUBMODULE_SLUG } from "@/app/lib/vegetableItems";
 import {
   collectMonthlyOverview, collectCombinedMonthlyTotal, collectVendorComparison, collectItemTrend, collectDailyVendorEntries,
 } from "@/app/lib/vegetableAnalytics";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireModuleAccessBySubModuleSlug(VEGETABLE_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(VEGETABLE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const p = req.nextUrl.searchParams;

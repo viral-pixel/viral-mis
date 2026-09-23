@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleReadAccess } from "@/app/lib/authz";
 import { VEGETABLE_SUBMODULE_SLUG } from "@/app/lib/vegetableItems";
 import { buildMultiSheetXlsxBuffer, xlsxDownloadHeaders } from "@/app/lib/excelIO";
 
 export async function GET() {
-  const auth = await requireModuleAccessBySubModuleSlug(VEGETABLE_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(VEGETABLE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const [purchases, potatoOnion, cash] = await Promise.all([

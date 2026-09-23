@@ -10,7 +10,7 @@ import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
 
 interface SubModule { id: number; name: string; slug: string }
 interface ModuleWithSub { id: number; name: string; subModules: SubModule[] }
-interface Me { displayName: string; username: string; isAdmin: boolean }
+interface Me { displayName: string; username: string; isAdmin: boolean; isViewer: boolean }
 
 export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -43,7 +43,9 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
           <div>
             <div style={{ fontFamily: FONT_HEAD, color: "#fff", fontSize: 17, letterSpacing: "0.03em", textTransform: "uppercase" }}>NCS MIS</div>
-            <div style={{ color: "#8FA69F", fontSize: 11 }}>{user?.isAdmin ? "Admin · all modules" : "Your modules"}</div>
+            <div style={{ color: "#8FA69F", fontSize: 11 }}>
+              {user?.isAdmin ? "Admin · all modules" : user?.isViewer ? "View access · all modules" : "Your modules"}
+            </div>
           </div>
         </div>
 

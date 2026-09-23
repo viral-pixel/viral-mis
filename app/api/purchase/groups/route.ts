@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug, requireAdmin } from "@/app/lib/authz";
+import { requireAdmin, requireModuleReadAccess } from "@/app/lib/authz";
 import { PURCHASE_SUBMODULE_SLUG } from "@/app/lib/purchaseGroups";
 
 function withSubItems<T extends { subItemsCsv: string }>(g: T) {
@@ -9,7 +9,7 @@ function withSubItems<T extends { subItemsCsv: string }>(g: T) {
 }
 
 export async function GET() {
-  const auth = await requireModuleAccessBySubModuleSlug(PURCHASE_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(PURCHASE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const groups = await prisma.purchaseGroup.findMany({ orderBy: { sortOrder: "asc" } });

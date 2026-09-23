@@ -11,7 +11,7 @@ export async function GET() {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const modules = await getAccessibleModules(session.userId, !!session.isAdmin);
+  const modules = await getAccessibleModules(session.userId, !!session.isAdmin, !!session.isViewer);
   const accessibleSlugs = new Set(modules.flatMap((m) => m.subModules.map((sm) => sm.slug)));
 
   const stats: Record<string, unknown> = {};

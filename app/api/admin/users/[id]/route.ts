@@ -18,7 +18,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const userId = Number(id);
 
-  const { displayName, isAdmin, moduleIds, resetPassword, newPassword } = await req.json();
+  const { displayName, isAdmin, isViewer, moduleIds, resetPassword, newPassword } = await req.json();
 
   if (newPassword && String(newPassword).length < 8) {
     return NextResponse.json({ error: "New password must be at least 8 characters" }, { status: 400 });
@@ -27,7 +27,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   await prisma.$transaction([
     prisma.user.update({
       where: { id: userId },
-      data: { displayName, isAdmin: !!isAdmin },
+      data: { displayName, isAdmin: !!isAdmin, isViewer: !!isAdmin ? false : !!isViewer },
     }),
     prisma.userModuleAccess.deleteMany({ where: { userId } }),
     prisma.userModuleAccess.createMany({

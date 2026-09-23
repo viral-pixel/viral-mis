@@ -65,10 +65,34 @@ export async function requireModuleAccessBySubModuleSlug(subModuleSlug: string) 
   return { ok: true as const, session };
 }
 
-// Modules a given user can see in nav/dashboards — all of them for Admin,
-// only assigned ones otherwise.
-export async function getAccessibleModules(userId: number, isAdmin: boolean) {
-  if (isAdmin) {
+// Same read-vs-write split as requireModuleAccessBySubModuleSlug (below):
+// passes for real module membership, Admin, OR a global viewer pass — use
+// ONLY in GET/export handlers, never to gate a create/edit/delete, so a
+// viewer's access can never silently include a write capability.
+export async function requireModuleReadAccess(subModuleSlug: string) {
+  const session = await getSession();
+  if (!session.userId) {
+    return { ok: false as const, response: NextResponse.json({ error: "Not signed in" }, { status: 401 }) };
+  }
+  if (session.isAdmin || session.isViewer) return { ok: true as const, session };
+
+  const subModule = await prisma.subModule.findUnique({ where: { slug: subModuleSlug } });
+  if (!subModule) {
+    return { ok: false as const, response: NextResponse.json({ error: "Unknown sub-module" }, { status: 404 }) };
+  }
+  const access = await prisma.userModuleAccess.findFirst({
+    where: { userId: session.userId, moduleId: subModule.moduleId },
+  });
+  if (!access) {
+    return { ok: false as const, response: NextResponse.json({ error: "Not authorized for this module" }, { status: 403 }) };
+  }
+  return { ok: true as const, session };
+}
+
+// Modules a given user can see in nav/dashboards — all of them for Admin or
+// a global viewer, only assigned ones otherwise.
+export async function getAccessibleModules(userId: number, isAdmin: boolean, isViewer = false) {
+  if (isAdmin || isViewer) {
     return prisma.module.findMany({ orderBy: { name: "asc" }, include: { subModules: true } });
   }
   const access = await prisma.userModuleAccess.findMany({

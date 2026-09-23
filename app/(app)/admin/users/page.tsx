@@ -6,7 +6,7 @@ import { SectionHead, Btn, Table, Th, Td, Empty, Input, Field, Modal, Tag, Confi
 import { C } from "@/app/lib/constants";
 
 interface ModuleOpt { id: number; name: string }
-interface UserRow { id: number; username: string; displayName: string; isAdmin: boolean; moduleIds: number[] }
+interface UserRow { id: number; username: string; displayName: string; isAdmin: boolean; isViewer: boolean; moduleIds: number[] }
 
 function randomPasswordClient() {
   return Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -66,8 +66,18 @@ export default function UsersAdminPage() {
               <tr key={u.id}>
                 <Td>{u.username}</Td>
                 <Td>{u.displayName}</Td>
-                <Td>{u.isAdmin ? <Tag color={C.teal} bg={C.tealSoft}>ADMIN</Tag> : <Tag color={C.sub} bg={C.bg}>ENTRY</Tag>}</Td>
-                <Td>{u.isAdmin ? "All (Admin)" : moduleNames(u.moduleIds)}</Td>
+                <Td>
+                  {u.isAdmin
+                    ? <Tag color={C.teal} bg={C.tealSoft}>ADMIN</Tag>
+                    : u.isViewer
+                      ? <Tag color={C.amber} bg={C.amberSoft}>VIEW ALL</Tag>
+                      : <Tag color={C.sub} bg={C.bg}>ENTRY</Tag>}
+                </Td>
+                <Td>
+                  {u.isAdmin ? "All modules" : u.isViewer ? (
+                    <>All modules (view-only){u.moduleIds.length > 0 && <span style={{ color: C.sub }}> · can edit: {moduleNames(u.moduleIds)}</span>}</>
+                  ) : moduleNames(u.moduleIds)}
+                </Td>
                 <Td>
                   <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                     <button onClick={() => setEditing(u)} style={{ background: "none", border: "none", color: C.teal, cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>Edit</button>
@@ -113,6 +123,7 @@ function UserForm({
   const [username, setUsername] = useState(initial?.username ?? "");
   const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
   const [isAdmin, setIsAdmin] = useState(initial?.isAdmin ?? false);
+  const [isViewer, setIsViewer] = useState(initial?.isViewer ?? false);
   const [moduleIds, setModuleIds] = useState<number[]>(initial?.moduleIds ?? []);
   const [changePassword, setChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -131,7 +142,7 @@ function UserForm({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          displayName, isAdmin, moduleIds,
+          displayName, isAdmin, isViewer, moduleIds,
           newPassword: changePassword && newPassword ? newPassword : undefined,
           resetPassword: changePassword && !newPassword,
         }),
@@ -143,7 +154,7 @@ function UserForm({
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, displayName, isAdmin, moduleIds }),
+        body: JSON.stringify({ username, displayName, isAdmin, isViewer, moduleIds }),
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok) onSaved({ username: d.username, password: d.generatedPassword });
@@ -167,7 +178,13 @@ function UserForm({
           Admin (full access to every module)
         </label>
         {!isAdmin && (
-          <Field label="Assigned Modules">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: C.ink }}>
+            <input type="checkbox" checked={isViewer} onChange={(e) => setIsViewer(e.target.checked)} />
+            Can view every module &amp; report (still can&apos;t create, edit or delete anywhere except what&apos;s ticked below)
+          </label>
+        )}
+        {!isAdmin && (
+          <Field label={isViewer ? "Assigned Modules (edit rights, on top of view-all)" : "Assigned Modules"}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {modules.length === 0 && <span style={{ color: C.faint, fontSize: 13 }}>No modules exist yet.</span>}
               {modules.map((m) => (

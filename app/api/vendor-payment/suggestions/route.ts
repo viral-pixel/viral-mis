@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleReadAccess } from "@/app/lib/authz";
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
 
 // Autosuggest source lists, independent of whatever status/date filter the
@@ -8,7 +8,7 @@ import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
 // only "Open" requests would get an empty/near-empty vendor list to type
 // against once most historical rows are Closed.
 export async function GET() {
-  const auth = await requireModuleAccessBySubModuleSlug(VENDOR_PAYMENT_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(VENDOR_PAYMENT_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const [vendors, vendorTypes, banks] = await Promise.all([

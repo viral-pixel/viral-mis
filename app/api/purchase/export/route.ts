@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleReadAccess } from "@/app/lib/authz";
 import { PURCHASE_SUBMODULE_SLUG } from "@/app/lib/purchaseGroups";
 import { buildXlsxResponseBuffer, xlsxDownloadHeaders } from "@/app/lib/excelIO";
 
 // One row per transaction (not one row per month) — this is the natural
 // export shape now that multiple entries per group/month are expected.
 export async function GET() {
-  const auth = await requireModuleAccessBySubModuleSlug(PURCHASE_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(PURCHASE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const entries = await prisma.purchaseEntry.findMany({

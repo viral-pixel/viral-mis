@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
   session.username = user.username;
   session.displayName = user.displayName;
   session.isAdmin = user.isAdmin;
+  session.isViewer = user.isViewer;
   await session.save();
 
   return NextResponse.json({ ok: true, isAdmin: user.isAdmin });

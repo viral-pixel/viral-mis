@@ -17,6 +17,7 @@ export async function GET() {
       username: u.username,
       displayName: u.displayName,
       isAdmin: u.isAdmin,
+      isViewer: u.isViewer,
       moduleIds: u.moduleAccess.map((a) => a.moduleId),
     }))
   );
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
 
-  const { username, displayName, isAdmin, moduleIds } = await req.json();
+  const { username, displayName, isAdmin, isViewer, moduleIds } = await req.json();
   if (!username || !displayName) {
     return NextResponse.json({ error: "Username and display name are required" }, { status: 400 });
   }
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
         username: String(username).trim().toLowerCase(),
         displayName,
         isAdmin: !!isAdmin,
+        isViewer: !!isAdmin ? false : !!isViewer, // Admin already sees everything — no need to also carry the flag
         passwordHash: await bcrypt.hash(password, 10),
         moduleAccess: {
           create: (Array.isArray(moduleIds) ? moduleIds : []).map((moduleId: number) => ({ moduleId })),

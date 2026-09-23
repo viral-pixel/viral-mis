@@ -6,6 +6,8 @@ export interface SessionData {
   username?: string;
   displayName?: string;
   isAdmin?: boolean;
+  // Global read-only pass — see app/lib/authz.ts requireModuleReadAccess.
+  isViewer?: boolean;
 }
 
 export const sessionOptions: SessionOptions = {

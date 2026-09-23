@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleAccessBySubModuleSlug, requireModuleReadAccess } from "@/app/lib/authz";
 import { PURCHASE_SUBMODULE_SLUG } from "@/app/lib/purchaseGroups";
 
 // Supports optional ?groupId=&from=YYYY-MM&to=YYYY-MM filters so both the
 // Monthly Entries list and the Costing Analysis dashboard can narrow down
 // to specific months/commodities instead of always pulling everything.
 export async function GET(req: NextRequest) {
-  const auth = await requireModuleAccessBySubModuleSlug(PURCHASE_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(PURCHASE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const groupId = req.nextUrl.searchParams.get("groupId");

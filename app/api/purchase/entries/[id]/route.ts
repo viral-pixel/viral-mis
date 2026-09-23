@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug, requireAdmin } from "@/app/lib/authz";
+import { requireAdmin, requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
 import { PURCHASE_SUBMODULE_SLUG } from "@/app/lib/purchaseGroups";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

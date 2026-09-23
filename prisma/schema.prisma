@@ -21,6 +21,12 @@ model User {
   passwordHash String
   displayName  String
   isAdmin      Boolean  @default(false)
+  // Global read-only pass — sees every module's data and reports, same as
+  // Admin's own viewing rights, but never bypasses a write/edit/delete
+  // check anywhere (those still require real UserModuleAccess or isAdmin).
+  // For a person who should see everything company-wide without becoming
+  // a second admin — e.g. Sandip, 2026-09-23.
+  isViewer     Boolean  @default(false)
   createdAt    DateTime @default(now())
 
   moduleAccess UserModuleAccess[]

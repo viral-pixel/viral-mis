@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleAccessBySubModuleSlug, requireModuleReadAccess } from "@/app/lib/authz";
 import { ROTI_SUBMODULE_SLUG } from "@/app/lib/rotiMeta";
 
 // List days in range, each with its own line items — the Entries tab sums
@@ -8,7 +8,7 @@ import { ROTI_SUBMODULE_SLUG } from "@/app/lib/rotiMeta";
 // pre-aggregating here, so the same list also feeds the day-detail view
 // without a second round trip.
 export async function GET(req: NextRequest) {
-  const auth = await requireModuleAccessBySubModuleSlug(ROTI_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(ROTI_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const from = req.nextUrl.searchParams.get("from");

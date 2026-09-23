@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleReadAccess } from "@/app/lib/authz";
 import { VEG_COST_ANALYSIS_SUBMODULE_SLUG } from "@/app/lib/managementReportsMeta";
 import { collectItemWiseAnalysis } from "@/app/lib/vegetableAdminAnalytics";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireModuleAccessBySubModuleSlug(VEG_COST_ANALYSIS_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(VEG_COST_ANALYSIS_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const month = req.nextUrl.searchParams.get("month");

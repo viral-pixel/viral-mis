@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
-import { requireModuleAccessBySubModuleSlug } from "@/app/lib/authz";
+import { requireModuleAccessBySubModuleSlug, requireModuleReadAccess } from "@/app/lib/authz";
 import { COMPLIANCE_SUBMODULE_SLUG, coerceEntityBody, getEntityConfig } from "@/app/lib/complianceEntities";
 
 // Generic CRUD (list/create here, edit/delete in [id]/route.ts) shared by
@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ ent
   const entity = getEntityConfig(entitySlug);
   if (!entity) return NextResponse.json({ error: "Unknown entity" }, { status: 404 });
 
-  const auth = await requireModuleAccessBySubModuleSlug(COMPLIANCE_SUBMODULE_SLUG);
+  const auth = await requireModuleReadAccess(COMPLIANCE_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
   const model = (prisma as unknown as Record<string, { findMany: (args: unknown) => Promise<unknown[]> }>)[entity.model];
