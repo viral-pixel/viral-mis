@@ -155,6 +155,17 @@ async function main() {
     },
   });
 
+  // Alkesh Reports: one of the original 6 person-based modules (2026-08-29
+  // design), only now actually being staffed. Module + login created ahead
+  // of its real sub-module content, same as the other placeholders were —
+  // no sub-modules yet, add them here once his actual tracking area (and
+  // ideally his own Excel, like everyone else's first module) is known.
+  const alkeshModule = await prisma.module.upsert({
+    where: { name: "Alkesh Reports" },
+    update: {},
+    create: { name: "Alkesh Reports" },
+  });
+
   const existingAdmin = await prisma.user.findUnique({ where: { username: "admin" } });
   const adminPassword = existingAdmin ? null : randomPassword();
   const admin = await prisma.user.upsert({
@@ -276,6 +287,27 @@ async function main() {
   else console.log("sandip user already existed, password unchanged");
   if (rajivPassword) console.log(`New rajiv login -> username: rajiv  password: ${rajivPassword}`);
   else console.log("rajiv user already existed, password unchanged");
+  const existingAlkesh = await prisma.user.findUnique({ where: { username: "alkesh" } });
+  const alkeshPassword = existingAlkesh ? null : randomPassword();
+  const alkeshUser = await prisma.user.upsert({
+    where: { username: "alkesh" },
+    update: {},
+    create: {
+      username: "alkesh",
+      displayName: "Alkesh Labana",
+      isAdmin: false,
+      passwordHash: await bcrypt.hash(alkeshPassword ?? "", 10),
+    },
+  });
+
+  await prisma.userModuleAccess.upsert({
+    where: { userId_moduleId: { userId: alkeshUser.id, moduleId: alkeshModule.id } },
+    update: {},
+    create: { userId: alkeshUser.id, moduleId: alkeshModule.id },
+  });
+  if (alkeshPassword) console.log(`New alkesh login -> username: alkesh  password: ${alkeshPassword}`);
+  else console.log("alkesh user already existed, password unchanged");
+
   console.log(`admin id=${admin.id}`);
 }
 
