@@ -12,3 +12,12 @@ export const RENT_TYPE_OF_PAY_SUGGESTIONS = [
   "Office Rent", "Land Rent", "Building Rent", "Maintenance",
 ] as const;
 export const RENT_MODE_OF_PAY_OPTIONS = ["Net Banking", "Cheque"] as const;
+
+// Capitalizes the first letter after the start of the string or a space /
+// hyphen / "(" / "/" — deliberately does NOT lowercase the rest of a word,
+// so acronyms already in the data (e.g. "AMW House", "KCCB Loan") survive
+// untouched instead of becoming "Amw"/"Kccb" (2026-09-24, user's request:
+// "Make all party name first letter of the word capital").
+export function toTitleCase(s: string): string {
+  return s.replace(/(^|[\s\-(/])([a-z])/g, (_m, sep, ch) => sep + ch.toUpperCase());
+}

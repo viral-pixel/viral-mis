@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requireMonthlyRentAccess } from "@/app/lib/monthlyRentAccess";
+import { toTitleCase } from "@/app/lib/monthlyRentMeta";
 
 export async function GET(req: NextRequest) {
   const auth = await requireMonthlyRentAccess();
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   const party = await prisma.rentParty.create({
     data: {
-      partyName: String(body.partyName).trim(),
+      partyName: toTitleCase(String(body.partyName).trim()),
       siteName: body.siteName ?? "",
       typeOfPay: body.typeOfPay ?? "",
       amount: body.amount !== undefined && body.amount !== "" ? Number(body.amount) : null,

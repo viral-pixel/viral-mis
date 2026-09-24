@@ -20,6 +20,12 @@ function todayStr() {
 function thisMonthStr() {
   return new Date().toISOString().slice(0, 7);
 }
+// "YYYY-MM" +/- N months, still "YYYY-MM".
+function shiftMonthStr(ym: string, delta: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 function fmtMonth(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" });
 }
@@ -38,7 +44,9 @@ interface PartyRow {
   mobileNo: string; status: string; depositDate: string | null; depositAmount: number | null; remarks: string;
 }
 interface PaymentRow {
-  id: number; partyId: number; party: PartyRow; dueDate: string; rentMonth: string; proposedAmount: number; remarksRequester: string;
+  id: number; partyId: number; party: PartyRow; dueDate: string; rentMonth: string;
+  basicPay: number; gst: number; tds: number; extraPay: number; extraDedn: number;
+  proposedAmount: number; remarksRequester: string;
   raisedByName: string; raisedAt: string; status: string; paidAmount: number | null; datePaid: string | null;
   remarksAdmin: string; paidBy: string;
 }
@@ -338,25 +346,36 @@ function PartyForm({ initial, onClose, onSaved }: { initial?: PartyRow; onClose:
 // everyone visible side by side, type the amount, add a remark, send).
 function PaymentsTab({ payments, parties, isAdmin, onChanged }: { payments: PaymentRow[] | null; parties: PartyRow[]; isAdmin: boolean; onChanged: () => void }) {
   const [raiseFilter, setRaiseFilter] = useState<"ACTIVE" | "NOT ACTIVE">("ACTIVE");
+  const [rentMonth, setRentMonth] = useState(thisMonthStr());
   const [statusFilter, setStatusFilter] = useState<"Open" | "Closed" | "All">("Open");
   const [editing, setEditing] = useState<PaymentRow | null>(null);
   const [approving, setApproving] = useState<PaymentRow | null>(null);
 
   const raiseParties = useMemo(() => parties.filter((p) => p.status === raiseFilter), [parties, raiseFilter]);
 
-  // Last paid amount per party — read straight off the already-loaded
-  // requests list (most recent Closed one by rentMonth), so Ketan/Sandip
-  // can see it right next to where they're raising the next one, no extra
-  // lookup or page to open.
+  // Last paid amount per party — specifically the month right before
+  // whichever Rent Month is selected (not just "most recent ever"), so it
+  // stays correct as Ketan clicks Next Month and moves forward.
   const lastPaidByParty = useMemo(() => {
+    const prevMonth = shiftMonthStr(rentMonth, -1);
     const map = new Map<number, PaymentRow>();
     for (const p of payments ?? []) {
       if (p.status !== "Closed" || p.paidAmount == null) continue;
-      const cur = map.get(p.partyId);
-      if (!cur || p.rentMonth > cur.rentMonth) map.set(p.partyId, p);
+      if (p.rentMonth.slice(0, 7) === prevMonth) map.set(p.partyId, p);
     }
     return map;
-  }, [payments]);
+  }, [payments, rentMonth]);
+
+  // What's already been raised for the currently-selected month, per party —
+  // this is what lets Ketan see "already sent" instead of risking a
+  // duplicate request (2026-09-24, user's explicit request).
+  const existingByPartyForMonth = useMemo(() => {
+    const map = new Map<number, PaymentRow>();
+    for (const p of payments ?? []) {
+      if (p.rentMonth.slice(0, 7) === rentMonth) map.set(p.partyId, p);
+    }
+    return map;
+  }, [payments, rentMonth]);
 
   const rows = useMemo(() => (payments ?? []).filter((p) => statusFilter === "All" || p.status === statusFilter), [payments, statusFilter]);
 
@@ -370,33 +389,51 @@ function PaymentsTab({ payments, parties, isAdmin, onChanged }: { payments: Paym
       <div style={{ marginBottom: 10, fontSize: 11.5, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.04em" }}>
         Send for Payment
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {(["ACTIVE", "NOT ACTIVE"] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setRaiseFilter(s)}
-            style={{
-              padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
-              background: raiseFilter === s ? C.teal : "#fff", color: raiseFilter === s ? "#fff" : C.ink,
-              border: `1px solid ${raiseFilter === s ? C.teal : C.border}`,
-            }}
-          >
-            {s === "ACTIVE" ? "Active" : "Not Active"}
-          </button>
-        ))}
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {(["ACTIVE", "NOT ACTIVE"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setRaiseFilter(s)}
+              style={{
+                padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                background: raiseFilter === s ? C.teal : "#fff", color: raiseFilter === s ? "#fff" : C.ink,
+                border: `1px solid ${raiseFilter === s ? C.teal : C.border}`,
+              }}
+            >
+              {s === "ACTIVE" ? "Active" : "Not Active"}
+            </button>
+          ))}
+        </div>
+        <Field label="Rent For Month Of">
+          <div style={{ display: "flex", gap: 6 }}>
+            <Input type="month" value={rentMonth} onChange={(e) => setRentMonth(e.target.value)} style={{ width: 140 }} />
+            <Btn variant="ghost" onClick={() => setRentMonth((m) => shiftMonthStr(m, 1))}>Next Month →</Btn>
+          </div>
+        </Field>
       </div>
 
       {raiseParties.length === 0 ? <Empty text={`No ${raiseFilter === "ACTIVE" ? "active" : "not active"} parties.`} /> : (
         <Table>
           <thead>
             <tr>
-              <Th>Party</Th><Th>Site</Th><Th>Last Month Paid</Th><Th>Rent For Month Of</Th>
-              <Th style={{ textAlign: "right" }}>Amount (₹)</Th><Th>Remarks</Th><Th />
+              <Th>Party</Th><Th>Site</Th><Th>Last Month Paid</Th>
+              <Th style={{ textAlign: "right" }}>Basic</Th><Th style={{ textAlign: "right" }}>GST</Th>
+              <Th style={{ textAlign: "right" }}>TDS</Th><Th style={{ textAlign: "right" }}>Extra Pay</Th>
+              <Th style={{ textAlign: "right" }}>Extra Dedn</Th><Th style={{ textAlign: "right" }}>Net Payable</Th>
+              <Th>Remarks</Th><Th />
             </tr>
           </thead>
           <tbody>
             {raiseParties.map((p) => (
-              <RaiseRow key={p.id} party={p} lastPaid={lastPaidByParty.get(p.id) ?? null} onSent={onChanged} />
+              <RaiseRow
+                key={p.id + "-" + rentMonth}
+                party={p}
+                rentMonth={rentMonth}
+                lastPaid={lastPaidByParty.get(p.id) ?? null}
+                existing={existingByPartyForMonth.get(p.id) ?? null}
+                onSent={onChanged}
+              />
             ))}
           </tbody>
         </Table>
@@ -417,7 +454,7 @@ function PaymentsTab({ payments, parties, isAdmin, onChanged }: { payments: Paym
         <Table>
           <thead>
             <tr>
-              <Th>Rent For</Th><Th>Party</Th><Th>Site</Th><Th style={{ textAlign: "right" }}>Proposed</Th>
+              <Th>Rent For</Th><Th>Party</Th><Th>Site</Th><Th style={{ textAlign: "right" }}>Net Payable</Th>
               <Th>Requester Remarks</Th><Th>Raised By</Th><Th style={{ textAlign: "right" }}>Paid</Th>
               <Th>Date Paid</Th><Th>Admin Remarks</Th><Th>Status</Th><Th />
             </tr>
@@ -456,27 +493,53 @@ function PaymentsTab({ payments, parties, isAdmin, onChanged }: { payments: Paym
   );
 }
 
-// One row per party, always visible, pre-filled — type the amount/remarks
-// and hit Send. Resets itself (keeping the chosen month) after sending so
-// the next one can go straight away, same spirit as Vendor Payment's grid.
-function RaiseRow({ party, lastPaid, onSent }: { party: PartyRow; lastPaid: PaymentRow | null; onSent: () => void }) {
-  const [rentMonth, setRentMonth] = useState(thisMonthStr());
-  const [amount, setAmount] = useState(party.netPay != null ? String(party.netPay) : "");
+// Basic + GST - TDS + Extra Pay - Extra Dedn = Net Payable — shared by the
+// raise row and the edit modal so the formula only lives in one place.
+function computeNetPayable(basicPay: number, gst: number, tds: number, extraPay: number, extraDedn: number): number {
+  return basicPay + gst - tds + extraPay - extraDedn;
+}
+
+// One row per party, always visible, pre-filled — type the breakdown and
+// hit Send; Net Payable computes itself but can be typed over directly if
+// something doesn't fit the formula. If this party already has a request
+// for the selected month, the row shows its status instead of a form, so
+// Ketan can see at a glance he doesn't need to send it again.
+function RaiseRow({
+  party, rentMonth, lastPaid, existing, onSent,
+}: {
+  party: PartyRow; rentMonth: string; lastPaid: PaymentRow | null; existing: PaymentRow | null; onSent: () => void;
+}) {
+  const [basicPay, setBasicPay] = useState(party.netPay != null ? String(party.netPay) : "");
+  const [gst, setGst] = useState("");
+  const [tds, setTds] = useState("");
+  const [extraPay, setExtraPay] = useState("");
+  const [extraDedn, setExtraDedn] = useState("");
+  const [netPayable, setNetPayable] = useState(party.netPay != null ? String(party.netPay) : "");
+  const [netTouched, setNetTouched] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [sending, setSending] = useState(false);
   const [justSent, setJustSent] = useState(false);
 
+  useEffect(() => {
+    if (netTouched) return;
+    const computed = computeNetPayable(Number(basicPay) || 0, Number(gst) || 0, Number(tds) || 0, Number(extraPay) || 0, Number(extraDedn) || 0);
+    setNetPayable(computed ? String(computed) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basicPay, gst, tds, extraPay, extraDedn]);
+
   const send = async () => {
-    if (!amount) { alert("Enter an amount"); return; }
+    if (!netPayable) { alert("Enter an amount"); return; }
     setSending(true);
     const res = await fetch("/api/monthly-rent/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ partyId: party.id, rentMonth, proposedAmount: amount, remarksRequester: remarks }),
+      body: JSON.stringify({
+        partyId: party.id, rentMonth, basicPay, gst, tds, extraPay, extraDedn,
+        proposedAmount: netPayable, remarksRequester: remarks,
+      }),
     });
     setSending(false);
     if (res.ok) {
-      setRemarks("");
       setJustSent(true);
       setTimeout(() => setJustSent(false), 2500);
       onSent();
@@ -487,6 +550,21 @@ function RaiseRow({ party, lastPaid, onSent }: { party: PartyRow; lastPaid: Paym
   };
   const onKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); send(); } };
 
+  if (existing) {
+    return (
+      <tr>
+        <Td>{party.partyName}</Td>
+        <Td>{party.siteName || "—"}</Td>
+        <Td style={{ color: C.sub }}>{lastPaid ? `${fmtMoney(lastPaid.paidAmount)} (${fmtMonth(lastPaid.rentMonth)})` : "—"}</Td>
+        <td colSpan={7} style={{ padding: "10px 12px", fontSize: 13.5, color: C.sub, borderBottom: `1px solid ${C.border}` }}>
+          Already {existing.status === "Closed" ? "paid" : "sent — awaiting approval"} for {fmtMonth(existing.rentMonth)}: {fmtMoney(existing.proposedAmount)}
+          {existing.status === "Closed" && existing.paidAmount != null ? ` (paid ${fmtMoney(existing.paidAmount)})` : ""}
+        </td>
+        <Td>{existing.status === "Closed" ? <PaymentStatusTag value="Closed" /> : <PaymentStatusTag value="Open" />}</Td>
+      </tr>
+    );
+  }
+
   return (
     <tr onKeyDown={onKeyDown}>
       <Td>{party.partyName}</Td>
@@ -494,9 +572,18 @@ function RaiseRow({ party, lastPaid, onSent }: { party: PartyRow; lastPaid: Paym
       <Td style={{ color: C.sub }}>
         {lastPaid ? `${fmtMoney(lastPaid.paidAmount)} (${fmtMonth(lastPaid.rentMonth)})` : "—"}
       </Td>
-      <Td><Input type="month" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 120 }} value={rentMonth} onChange={(e) => setRentMonth(e.target.value)} /></Td>
-      <Td><Input type="number" step="0.01" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 90, fontWeight: 700 }} value={amount} onChange={(e) => setAmount(e.target.value)} /></Td>
-      <Td><Input placeholder="Remarks" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 140 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Td>
+      <Td><Input type="number" step="0.01" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 80 }} value={basicPay} onChange={(e) => setBasicPay(e.target.value)} /></Td>
+      <Td><Input type="number" step="0.01" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 70 }} value={gst} onChange={(e) => setGst(e.target.value)} /></Td>
+      <Td><Input type="number" step="0.01" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 70 }} value={tds} onChange={(e) => setTds(e.target.value)} /></Td>
+      <Td><Input type="number" step="0.01" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 70 }} value={extraPay} onChange={(e) => setExtraPay(e.target.value)} /></Td>
+      <Td><Input type="number" step="0.01" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 70 }} value={extraDedn} onChange={(e) => setExtraDedn(e.target.value)} /></Td>
+      <Td>
+        <Input
+          type="number" step="0.01" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 90, fontWeight: 700 }}
+          value={netPayable} onChange={(e) => { setNetPayable(e.target.value); setNetTouched(true); }}
+        />
+      </Td>
+      <Td><Input placeholder="Remarks" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 120 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Td>
       <Td>
         {justSent
           ? <span style={{ color: C.green, fontWeight: 600, fontSize: 12.5 }}>✓ Sent</span>
@@ -513,10 +600,23 @@ function PaymentEditModal({ parties, row, onClose, onSaved }: { parties: PartyRo
   const [partyId, setPartyId] = useState(String(row.partyId));
   const [rentMonth, setRentMonth] = useState(row.rentMonth.slice(0, 7));
   const [dueDate, setDueDate] = useState(row.dueDate.slice(0, 10));
+  const [basicPay, setBasicPay] = useState(String(row.basicPay));
+  const [gst, setGst] = useState(String(row.gst));
+  const [tds, setTds] = useState(String(row.tds));
+  const [extraPay, setExtraPay] = useState(String(row.extraPay));
+  const [extraDedn, setExtraDedn] = useState(String(row.extraDedn));
   const [proposedAmount, setProposedAmount] = useState(String(row.proposedAmount));
+  const [netTouched, setNetTouched] = useState(false);
   const [remarksRequester, setRemarksRequester] = useState(row.remarksRequester);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (netTouched) return;
+    const computed = computeNetPayable(Number(basicPay) || 0, Number(gst) || 0, Number(tds) || 0, Number(extraPay) || 0, Number(extraDedn) || 0);
+    setProposedAmount(String(computed));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basicPay, gst, tds, extraPay, extraDedn]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -525,14 +625,14 @@ function PaymentEditModal({ parties, row, onClose, onSaved }: { parties: PartyRo
     const res = await fetch(`/api/monthly-rent/payments/${row.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ partyId, rentMonth, dueDate, proposedAmount, remarksRequester }),
+      body: JSON.stringify({ partyId, rentMonth, dueDate, basicPay, gst, tds, extraPay, extraDedn, proposedAmount, remarksRequester }),
     });
     if (res.ok) onSaved();
     else { const d = await res.json().catch(() => ({})); setError(d.error || "Could not save"); setSaving(false); }
   };
 
   return (
-    <Modal title="Edit Payment Request" onClose={onClose} width={440}>
+    <Modal title="Edit Payment Request" onClose={onClose} width={480}>
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <Field label="Party">
           <Select required value={partyId} onChange={(e) => setPartyId(e.target.value)}>
@@ -543,7 +643,18 @@ function PaymentEditModal({ parties, row, onClose, onSaved }: { parties: PartyRo
           <Field label="Rent For Month Of"><Input type="month" required value={rentMonth} onChange={(e) => setRentMonth(e.target.value)} /></Field>
           <Field label="Due Date"><Input type="date" required value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Field>
         </div>
-        <Field label="Proposed Amount (₹)"><Input type="number" step="0.01" required value={proposedAmount} onChange={(e) => setProposedAmount(e.target.value)} /></Field>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <Field label="Basic Pay (₹)"><Input type="number" step="0.01" value={basicPay} onChange={(e) => setBasicPay(e.target.value)} /></Field>
+          <Field label="GST (₹)"><Input type="number" step="0.01" value={gst} onChange={(e) => setGst(e.target.value)} /></Field>
+          <Field label="TDS (₹)"><Input type="number" step="0.01" value={tds} onChange={(e) => setTds(e.target.value)} /></Field>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Extra Pay (₹)"><Input type="number" step="0.01" value={extraPay} onChange={(e) => setExtraPay(e.target.value)} /></Field>
+          <Field label="Extra Dedn (₹)"><Input type="number" step="0.01" value={extraDedn} onChange={(e) => setExtraDedn(e.target.value)} /></Field>
+        </div>
+        <Field label="Net Payable (₹) — Basic + GST − TDS + Extra Pay − Extra Dedn, editable">
+          <Input type="number" step="0.01" required value={proposedAmount} onChange={(e) => { setProposedAmount(e.target.value); setNetTouched(true); }} />
+        </Field>
         <Field label="Remarks (deduct/add adjustments etc.)"><Textarea rows={2} value={remarksRequester} onChange={(e) => setRemarksRequester(e.target.value)} /></Field>
         {error && <div style={{ color: C.red, fontSize: 13 }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -568,7 +679,9 @@ function ApproveModal({ row, onClose, onSaved }: { row: PaymentRow; onClose: () 
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        partyId: row.partyId, rentMonth: row.rentMonth.slice(0, 7), dueDate: row.dueDate, proposedAmount: row.proposedAmount, remarksRequester: row.remarksRequester,
+        partyId: row.partyId, rentMonth: row.rentMonth.slice(0, 7), dueDate: row.dueDate,
+        basicPay: row.basicPay, gst: row.gst, tds: row.tds, extraPay: row.extraPay, extraDedn: row.extraDedn,
+        proposedAmount: row.proposedAmount, remarksRequester: row.remarksRequester,
         paidAmount, datePaid, remarksAdmin, status,
       }),
     });
@@ -578,11 +691,14 @@ function ApproveModal({ row, onClose, onSaved }: { row: PaymentRow; onClose: () 
   };
 
   return (
-    <Modal title={`Approve & Pay — ${row.party.partyName}`} onClose={onClose} width={440}>
+    <Modal title={`Approve & Pay — ${row.party.partyName}`} onClose={onClose} width={460}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ fontSize: 13, color: C.sub }}>
-          Rent for {fmtMonth(row.rentMonth)} — proposed {fmtMoney(row.proposedAmount)}
+          Rent for {fmtMonth(row.rentMonth)} — Net Payable {fmtMoney(row.proposedAmount)}
           {row.remarksRequester ? ` — "${row.remarksRequester}"` : ""}
+        </div>
+        <div style={{ fontSize: 12, color: C.sub, background: C.bg, borderRadius: 6, padding: "8px 10px" }}>
+          Basic {fmtMoney(row.basicPay)} · GST {fmtMoney(row.gst)} · TDS {fmtMoney(row.tds)} · Extra Pay {fmtMoney(row.extraPay)} · Extra Dedn {fmtMoney(row.extraDedn)}
         </div>
         <Field label="Paid Amount (₹)"><Input type="number" step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} /></Field>
         <Field label="Date Paid"><Input type="date" value={datePaid} onChange={(e) => setDatePaid(e.target.value)} /></Field>

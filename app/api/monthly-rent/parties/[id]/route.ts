@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requireMonthlyRentAccess } from "@/app/lib/monthlyRentAccess";
+import { toTitleCase } from "@/app/lib/monthlyRentMeta";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireMonthlyRentAccess();
@@ -11,7 +12,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const party = await prisma.rentParty.update({
     where: { id: Number(id) },
     data: {
-      partyName: String(body.partyName).trim(),
+      partyName: toTitleCase(String(body.partyName).trim()),
       siteName: body.siteName ?? "",
       typeOfPay: body.typeOfPay ?? "",
       amount: body.amount !== undefined && body.amount !== "" ? Number(body.amount) : null,

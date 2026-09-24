@@ -864,7 +864,18 @@ model RentPaymentEntry {
 
   dueDate        DateTime // pay by this date
   rentMonth      DateTime // which month's rent this is for — normalized to the 1st, UTC (2026-09-24, user's explicit request)
-  proposedAmount Float // what Ketan/Sandip is asking to be paid this cycle
+
+  // Cost breakdown Ketan/Sandip enters by hand (2026-09-24, user's explicit
+  // request) — proposedAmount below is "Net Payable" = basicPay + gst - tds
+  // + extraPay - extraDedn, computed live in the UI but stays a plain
+  // editable field here so it can be overridden if something was missed.
+  basicPay  Float @default(0)
+  gst       Float @default(0)
+  tds       Float @default(0)
+  extraPay  Float @default(0)
+  extraDedn Float @default(0)
+
+  proposedAmount Float // "Net Payable" — what Ketan/Sandip is asking to be paid this cycle
   remarksRequester String @default("") // ad hoc deduction/addition note from whoever raised it, e.g. "deduct 500 for water damage"
 
   raisedBy     String   @default("") // username

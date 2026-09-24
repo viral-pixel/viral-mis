@@ -44,6 +44,11 @@ export async function POST(req: NextRequest) {
       // "something simpler") — defaults to today, still editable later from
       // the requests table below if a real due date matters for a party.
       dueDate: body.dueDate ? new Date(body.dueDate) : new Date(),
+      basicPay: body.basicPay !== undefined && body.basicPay !== "" ? Number(body.basicPay) : 0,
+      gst: body.gst !== undefined && body.gst !== "" ? Number(body.gst) : 0,
+      tds: body.tds !== undefined && body.tds !== "" ? Number(body.tds) : 0,
+      extraPay: body.extraPay !== undefined && body.extraPay !== "" ? Number(body.extraPay) : 0,
+      extraDedn: body.extraDedn !== undefined && body.extraDedn !== "" ? Number(body.extraDedn) : 0,
       proposedAmount: Number(proposedAmount),
       remarksRequester: body.remarksRequester ?? "",
       raisedBy: auth.session.username ?? "",

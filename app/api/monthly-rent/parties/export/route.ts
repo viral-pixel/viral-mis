@@ -28,11 +28,13 @@ export async function GET() {
     {
       name: "Payment Requests",
       headers: [
-        "Party Name", "Site Name", "Rent For Month Of", "Due Date", "Proposed Amount", "Requester Remarks", "Raised By", "Raised At",
+        "Party Name", "Site Name", "Rent For Month Of", "Due Date", "Basic Pay", "GST", "TDS", "Extra Pay", "Extra Dedn",
+        "Net Payable", "Requester Remarks", "Raised By", "Raised At",
         "Status", "Paid Amount", "Date Paid", "Admin Remarks", "Paid By",
       ],
       rows: payments.map((e) => [
-        e.party.partyName, e.party.siteName, e.rentMonth.toISOString().slice(0, 7), e.dueDate.toISOString().slice(0, 10), e.proposedAmount, e.remarksRequester,
+        e.party.partyName, e.party.siteName, e.rentMonth.toISOString().slice(0, 7), e.dueDate.toISOString().slice(0, 10),
+        e.basicPay, e.gst, e.tds, e.extraPay, e.extraDedn, e.proposedAmount, e.remarksRequester,
         e.raisedByName, e.raisedAt.toISOString().slice(0, 10), e.status, e.paidAmount ?? "",
         e.datePaid ? e.datePaid.toISOString().slice(0, 10) : "", e.remarksAdmin, e.paidBy,
       ]),
