@@ -21,3 +21,12 @@ export const RENT_MODE_OF_PAY_OPTIONS = ["Net Banking", "Cheque"] as const;
 export function toTitleCase(s: string): string {
   return s.replace(/(^|[\s\-(/])([a-z])/g, (_m, sep, ch) => sep + ch.toUpperCase());
 }
+
+// Financial year = Apr-Mar (India). Shared between the Payment History tab
+// and the Party Ledger export so the two never disagree on which FY a given
+// payment falls into.
+export function fyLabel(d: Date): string {
+  const y = d.getUTCFullYear();
+  const startYear = d.getUTCMonth() >= 3 ? y : y - 1; // getUTCMonth() 0-11, April = 3
+  return `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}

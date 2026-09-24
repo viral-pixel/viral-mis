@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Download, Upload, IndianRupee, ListChecks } from "lucide-react";
 import { SectionHead, StatCard, Btn, Table, Th, Td, Empty, Field, Input, Select, Textarea, Modal, ConfirmDelete, Tag } from "@/app/components/ui";
 import { C } from "@/app/lib/constants";
-import { RENT_TYPE_OF_PAY_SUGGESTIONS, RENT_MODE_OF_PAY_OPTIONS } from "@/app/lib/monthlyRentMeta";
+import { RENT_TYPE_OF_PAY_SUGGESTIONS, RENT_MODE_OF_PAY_OPTIONS, fyLabel } from "@/app/lib/monthlyRentMeta";
 
 function fmtMoney(n: number | null) {
   if (n == null) return "—";
@@ -724,18 +724,12 @@ function ApproveModal({ row, onClose, onSaved }: { row: PaymentRow; onClose: () 
 }
 
 // ---------- Payment History (FY) tab ----------
-// Financial year = Apr-Mar (India). "Total amount tracking" per the user's
-// explicit request (2026-09-24) — how much actually moved to each party,
-// per FY, at a glance, not just this month's queue.
-function fyLabel(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getUTCFullYear();
-  const startYear = d.getUTCMonth() >= 3 ? y : y - 1; // getUTCMonth() 0-11, April = 3
-  return `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
-}
-
+// "Total amount tracking" per the user's explicit request (2026-09-24) —
+// how much actually moved to each party, per FY, at a glance, not just this
+// month's queue. fyLabel itself lives in monthlyRentMeta.ts, shared with
+// the Party Ledger export.
 function currentFyLabel(): string {
-  return fyLabel(new Date().toISOString());
+  return fyLabel(new Date());
 }
 
 function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
@@ -748,7 +742,7 @@ function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
     let grand = 0;
 
     for (const p of closed) {
-      const fy = fyLabel(p.datePaid ?? p.rentMonth);
+      const fy = fyLabel(new Date(p.datePaid ?? p.rentMonth));
       fySet.add(fy);
       const amt = p.paidAmount ?? 0;
 
@@ -884,6 +878,11 @@ function PartyLedgerTab({ parties, payments }: { parties: PartyRow[]; payments: 
             ))}
           </Select>
         </Field>
+        {party && (
+          <a href={`/api/monthly-rent/parties/${party.id}/ledger-export`} style={{ textDecoration: "none" }}>
+            <Btn variant="ghost"><Download size={15} /> Export Excel (Month &amp; Year-wise)</Btn>
+          </a>
+        )}
         {party && (
           <>
             <StatCard icon={IndianRupee} label="Total Paid (All Time)" value={fmtMoney(totalPaid)} tint={C.teal} />
