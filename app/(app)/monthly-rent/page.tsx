@@ -613,11 +613,15 @@ function fyLabel(iso: string): string {
   return `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
 }
 
+function currentFyLabel(): string {
+  return fyLabel(new Date().toISOString());
+}
+
 function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
-  const { fys, partyTotals, fyTotals, grandTotal } = useMemo(() => {
+  const { fys, partyRowsByFy, fyTotals, grandTotal } = useMemo(() => {
     const closed = (payments ?? []).filter((p) => p.status === "Closed" && p.paidAmount != null);
     const fySet = new Set<string>();
-    const byParty = new Map<number, { name: string; site: string; byFy: Map<string, number>; total: number }>();
+    const byFyParty = new Map<string, Map<number, { name: string; site: string; amount: number }>>();
     const byFy = new Map<string, number>();
     let grand = 0;
 
@@ -626,52 +630,76 @@ function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
       fySet.add(fy);
       const amt = p.paidAmount ?? 0;
 
-      const partyRec = byParty.get(p.partyId) ?? { name: p.party.partyName, site: p.party.siteName, byFy: new Map(), total: 0 };
-      partyRec.byFy.set(fy, (partyRec.byFy.get(fy) ?? 0) + amt);
-      partyRec.total += amt;
-      byParty.set(p.partyId, partyRec);
+      const partiesForFy = byFyParty.get(fy) ?? new Map<number, { name: string; site: string; amount: number }>();
+      const rec = partiesForFy.get(p.partyId) ?? { name: p.party.partyName, site: p.party.siteName, amount: 0 };
+      rec.amount += amt;
+      partiesForFy.set(p.partyId, rec);
+      byFyParty.set(fy, partiesForFy);
 
       byFy.set(fy, (byFy.get(fy) ?? 0) + amt);
       grand += amt;
     }
 
     const fys = [...fySet].sort();
-    const partyTotals = [...byParty.values()].sort((a, b) => b.total - a.total);
-    return { fys, partyTotals, fyTotals: byFy, grandTotal: grand };
+    const partyRowsByFy = new Map<string, { name: string; site: string; amount: number }[]>();
+    for (const [fy, parties] of byFyParty) {
+      partyRowsByFy.set(fy, [...parties.values()].sort((a, b) => b.amount - a.amount));
+    }
+    return { fys, partyRowsByFy, fyTotals: byFy, grandTotal: grand };
   }, [payments]);
 
+  const [selectedFy, setSelectedFy] = useState<string>(currentFyLabel());
+
+  useEffect(() => {
+    if (fys.length > 0 && !fys.includes(selectedFy)) setSelectedFy(fys[fys.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fys.join(",")]);
+
   if (payments === null) return <Empty text="Loading…" />;
-  if (partyTotals.length === 0) return <Empty text="No closed (paid) requests yet — totals will build up here as payments are made." />;
+  if (fys.length === 0) return <Empty text="No closed (paid) requests yet — totals will build up here as payments are made." />;
+
+  const rows = partyRowsByFy.get(selectedFy) ?? [];
+  const totalForFy = fyTotals.get(selectedFy) ?? 0;
 
   return (
     <div>
-      <div style={{ marginBottom: 12, fontSize: 13, color: C.sub }}>
-        Total actually paid, per party, per financial year (Apr–Mar) — from Closed requests only.
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 18 }}>
+        <Field label="Financial Year">
+          <Select value={selectedFy} onChange={(e) => setSelectedFy(e.target.value)} style={{ width: 160 }}>
+            {fys.map((fy) => <option key={fy} value={fy}>{fy}</option>)}
+          </Select>
+        </Field>
+        <StatCard icon={IndianRupee} label={`Total Paid — ${selectedFy}`} value={fmtMoney(totalForFy)} tint={C.teal} />
+        <StatCard icon={ListChecks} label="Parties Paid" value={rows.length} tint={C.sub} />
       </div>
-      <Table>
-        <thead>
-          <tr>
-            <Th>Party</Th><Th>Site</Th>
-            {fys.map((fy) => <Th key={fy} style={{ textAlign: "right" }}>{fy}</Th>)}
-            <Th style={{ textAlign: "right" }}>Total</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {partyTotals.map((p) => (
-            <tr key={p.name + p.site}>
-              <Td>{p.name}</Td>
-              <Td>{p.site || "—"}</Td>
-              {fys.map((fy) => <Td key={fy} style={{ textAlign: "right" }}>{fmtMoney(p.byFy.get(fy) ?? 0)}</Td>)}
-              <Td style={{ textAlign: "right", fontWeight: 700 }}>{fmtMoney(p.total)}</Td>
+
+      <div style={{ marginBottom: 10, fontSize: 13, color: C.sub }}>
+        Amount actually paid per party for {selectedFy} (Apr–Mar) — from Closed requests only.
+      </div>
+      {rows.length === 0 ? <Empty text={`No payments closed in ${selectedFy}.`} /> : (
+        <Table>
+          <thead><tr><Th>Party</Th><Th>Site</Th><Th style={{ textAlign: "right" }}>Amount Paid</Th></tr></thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.name + p.site}>
+                <Td>{p.name}</Td>
+                <Td>{p.site || "—"}</Td>
+                <Td style={{ textAlign: "right" }}>{fmtMoney(p.amount)}</Td>
+              </tr>
+            ))}
+            <tr>
+              <Td style={{ fontWeight: 700 }}>Total</Td><Td>{""}</Td>
+              <Td style={{ textAlign: "right", fontWeight: 700 }}>{fmtMoney(totalForFy)}</Td>
             </tr>
-          ))}
-          <tr>
-            <Td style={{ fontWeight: 700 }}>Total</Td><Td>{""}</Td>
-            {fys.map((fy) => <Td key={fy} style={{ textAlign: "right", fontWeight: 700 }}>{fmtMoney(fyTotals.get(fy) ?? 0)}</Td>)}
-            <Td style={{ textAlign: "right", fontWeight: 700 }}>{fmtMoney(grandTotal)}</Td>
-          </tr>
-        </tbody>
-      </Table>
+          </tbody>
+        </Table>
+      )}
+
+      {fys.length > 1 && (
+        <div style={{ marginTop: 10, fontSize: 12, color: C.sub }}>
+          Grand total across all {fys.length} financial years on record: {fmtMoney(grandTotal)}
+        </div>
+      )}
     </div>
   );
 }
