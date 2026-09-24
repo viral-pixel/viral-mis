@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/app/lib/session";
 import { getAccessibleModules } from "@/app/lib/authz";
+import { hasMonthlyRentAccess } from "@/app/lib/monthlyRentAccess";
 
 export async function GET() {
   const session = await getSession();
@@ -14,6 +15,7 @@ export async function GET() {
       displayName: session.displayName,
       isAdmin: !!session.isAdmin,
       isViewer: !!session.isViewer,
+      hasMonthlyRentAccess: hasMonthlyRentAccess(session.username, !!session.isAdmin),
     },
     modules,
   });

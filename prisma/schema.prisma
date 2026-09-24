@@ -806,3 +806,81 @@ model CostingRecipeIngredient {
 
   @@index([recipeId])
 }
+
+// ---- "Monthly Rent" (Ketan Reports module) ----
+// Source: a 104-party workbook with ~135 monthly payment columns going back
+// to 2015, mixing real amounts with status text ("Paid", "CLOSE") in the
+// same cells — too inconsistent to import as structured history, and not
+// what was actually asked for. Only the master fields (name, site, rent
+// type, TDS, mode/timing of pay, mobile, active status) are imported here;
+// the payment workflow below is for the ongoing/forward cycle only
+// (2026-09-24, user's framing: "Ketan uploads... sends it to me for the
+// payment before the due date").
+//
+// Visibility is deliberately narrow — Admin, Ketan, and Sandip only (user's
+// explicit instruction) — and NOT done via the ordinary Module/SubModule
+// access system, or even a "whoever holds this module" seat check: Rajiv
+// already holds a real UserModuleAccess row on "Ketan Reports" itself (his
+// separate "everything except Vendor Payment" grant), so either approach
+// would leak this in to him too. Resolved instead in
+// app/lib/monthlyRentAccess.ts by username.
+model RentParty {
+  id        Int     @id @default(autoincrement())
+  srNo      Int? // preserves the source's Sr. No. where known — new parties added later get none
+  partyName String
+  siteName  String  @default("")
+  typeOfPay String  @default("") // House Rent / Car Rent / Kitchen Rent / ... free text w/ suggestions
+  amount    Float? // base rent, before TDS
+  tdsDeduction Float @default(0)
+  netPay    Float? // kept as its own editable field rather than force-derived — the source sometimes typed it independently of Amount - TDS
+  modeOfPay String  @default("") // "Net Banking" | "Cheque" | ...
+  approxDateOfPay String @default("") // "5 to 10 of Month" — free text as in the source, not a real date
+  mobileNo  String  @default("")
+  status    String  @default("ACTIVE") // "ACTIVE" | "NOT ACTIVE" — only ACTIVE parties go through the payment workflow
+
+  // Not in the source — the user's explicit new requirement (2026-09-24):
+  // "so that we can remember this for future reference" once a tenancy ends.
+  depositDate   DateTime?
+  depositAmount Float?
+
+  remarks     String   @default("")
+  enteredBy   String   @default("")
+  importBatch String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  payments RentPaymentEntry[]
+
+  @@index([status])
+}
+
+// One row per payment cycle Ketan or Sandip sends to Admin — same two-step
+// shape as VendorPaymentEntry (raise -> approve & pay -> close), just with
+// two possible raisers instead of one.
+model RentPaymentEntry {
+  id      Int       @id @default(autoincrement())
+  partyId Int
+  party   RentParty @relation(fields: [partyId], references: [id])
+
+  dueDate        DateTime // pay by this date
+  proposedAmount Float // what Ketan/Sandip is asking to be paid this cycle
+  remarksRequester String @default("") // ad hoc deduction/addition note from whoever raised it, e.g. "deduct 500 for water damage"
+
+  raisedBy     String   @default("") // username
+  raisedByName String   @default("")
+  raisedAt     DateTime @default(now())
+
+  status        String    @default("Open") // "Open" | "Closed"
+  paidAmount    Float?
+  datePaid      DateTime?
+  remarksAdmin  String    @default("") // Admin's own note, e.g. why the paid amount differs from proposed
+  paidBy        String    @default("") // display name of whoever closed it
+  closedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partyId])
+  @@index([status])
+  @@index([dueDate])
+}

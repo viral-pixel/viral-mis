@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings, PieChart, Calculator } from "lucide-react";
+import { LayoutDashboard, Layers, Users, ListTree, LogOut, Bell, Settings, PieChart, Calculator, Building2 } from "lucide-react";
 import { C, FONT_HEAD } from "@/app/lib/constants";
 import { SUBMODULE_ROUTES } from "@/app/lib/subModuleRoutes";
 import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "@/app/lib/vendorPaymentMeta";
@@ -11,7 +11,7 @@ import { ALKESH_SUBMODULE_SLUG } from "@/app/lib/alkeshMeta";
 
 interface SubModule { id: number; name: string; slug: string }
 interface ModuleWithSub { id: number; name: string; subModules: SubModule[] }
-interface Me { displayName: string; username: string; isAdmin: boolean; isViewer: boolean }
+interface Me { displayName: string; username: string; isAdmin: boolean; isViewer: boolean; hasMonthlyRentAccess?: boolean }
 
 export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -52,6 +52,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
         <NavLink href="/" label="Dashboard" icon={LayoutDashboard} pathname={pathname} exact />
         <NavLink href="/reminders" label="Reminders" icon={Bell} pathname={pathname} />
+        {/* Deliberately not under any module's section — visible only to
+            Admin/Ketan/Sandip (app/lib/monthlyRentAccess.ts), a narrower
+            circle than either of their own modules' regular membership. */}
+        {user?.hasMonthlyRentAccess && (
+          <NavLink href="/monthly-rent" label="Monthly Rent" icon={Building2} pathname={pathname} />
+        )}
 
         {modules.map((m) => (
           <div key={m.id} style={{ marginTop: 14 }}>
