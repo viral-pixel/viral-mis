@@ -509,12 +509,16 @@ function RaiseRow({
 }: {
   party: PartyRow; rentMonth: string; lastPaid: PaymentRow | null; existing: PaymentRow | null; onSent: () => void;
 }) {
-  const [basicPay, setBasicPay] = useState(party.netPay != null ? String(party.netPay) : "");
+  // Deliberately blank for every party, not pre-filled from the party
+  // master's Net Pay — only 2 of 104 parties happened to have that field
+  // set from the original import, so pre-filling made those 2 look
+  // mysteriously different from the other 11 (2026-09-24, user's report).
+  const [basicPay, setBasicPay] = useState("");
   const [gst, setGst] = useState("");
   const [tds, setTds] = useState("");
   const [extraPay, setExtraPay] = useState("");
   const [extraDedn, setExtraDedn] = useState("");
-  const [netPayable, setNetPayable] = useState(party.netPay != null ? String(party.netPay) : "");
+  const [netPayable, setNetPayable] = useState("");
   const [netTouched, setNetTouched] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [sending, setSending] = useState(false);
