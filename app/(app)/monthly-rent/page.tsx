@@ -835,12 +835,18 @@ function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
 // (2026-09-24, user's explicit request) — every month on record for one
 // party, in one place, instead of hunting across FY tables.
 function PartyLedgerTab({ parties, payments }: { parties: PartyRow[]; payments: PaymentRow[] | null }) {
-  const sortedParties = useMemo(() => [...parties].sort((a, b) => a.partyName.localeCompare(b.partyName)), [parties]);
+  const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "NOT ACTIVE">("ACTIVE");
+  const sortedParties = useMemo(
+    () => parties.filter((p) => p.status === statusFilter).sort((a, b) => a.partyName.localeCompare(b.partyName)),
+    [parties, statusFilter]
+  );
   const [partyId, setPartyId] = useState<string>("");
 
+  // Reset to the first party in the list whenever the Active/Not Active
+  // filter changes (the previously-selected party may not be in it anymore).
   useEffect(() => {
-    if (!partyId && sortedParties.length > 0) setPartyId(String(sortedParties[0].id));
-  }, [sortedParties, partyId]);
+    setPartyId(sortedParties[0] ? String(sortedParties[0].id) : "");
+  }, [sortedParties]);
 
   const party = sortedParties.find((p) => String(p.id) === partyId) ?? null;
 
@@ -854,11 +860,27 @@ function PartyLedgerTab({ parties, payments }: { parties: PartyRow[]; payments: 
 
   return (
     <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {(["ACTIVE", "NOT ACTIVE"] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            style={{
+              padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              background: statusFilter === s ? C.teal : "#fff", color: statusFilter === s ? "#fff" : C.ink,
+              border: `1px solid ${statusFilter === s ? C.teal : C.border}`,
+            }}
+          >
+            {s === "ACTIVE" ? "Active" : "Not Active"}
+          </button>
+        ))}
+      </div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 18 }}>
         <Field label="Party">
           <Select value={partyId} onChange={(e) => setPartyId(e.target.value)} style={{ width: 320 }}>
+            {sortedParties.length === 0 && <option value="">No {statusFilter === "ACTIVE" ? "active" : "not active"} parties</option>}
             {sortedParties.map((p) => (
-              <option key={p.id} value={p.id}>{p.partyName} — {p.siteName}{p.status === "NOT ACTIVE" ? " (Not Active)" : ""}</option>
+              <option key={p.id} value={p.id}>{p.partyName} — {p.siteName}</option>
             ))}
           </Select>
         </Field>
@@ -871,7 +893,7 @@ function PartyLedgerTab({ parties, payments }: { parties: PartyRow[]; payments: 
         )}
       </div>
 
-      {!party ? <Empty text="No parties yet." /> : entries.length === 0 ? (
+      {!party ? <Empty text={`No ${statusFilter === "ACTIVE" ? "active" : "not active"} parties.`} /> : entries.length === 0 ? (
         <Empty text={`No payment history yet for ${party.partyName}.`} />
       ) : (
         <Table>
