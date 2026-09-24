@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requireMonthlyRentAccess } from "@/app/lib/monthlyRentAccess";
 
+// "YYYY-MM" (from <input type="month">) -> the 1st of that month, UTC.
+function monthToDate(v: string): Date {
+  const [y, m] = v.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1));
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireMonthlyRentAccess();
   if (!auth.ok) return auth.response;
@@ -24,16 +30,20 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response;
 
   const body = await req.json();
-  const { partyId, dueDate, proposedAmount } = body;
-  if (!partyId || !dueDate || proposedAmount === undefined || proposedAmount === "") {
-    return NextResponse.json({ error: "Party, Due Date and Proposed Amount are required" }, { status: 400 });
+  const { partyId, rentMonth, proposedAmount } = body;
+  if (!partyId || !rentMonth || proposedAmount === undefined || proposedAmount === "") {
+    return NextResponse.json({ error: "Party, Rent Month and Proposed Amount are required" }, { status: 400 });
   }
 
   const isAdmin = auth.role === "admin";
   const entry = await prisma.rentPaymentEntry.create({
     data: {
       partyId: Number(partyId),
-      dueDate: new Date(dueDate),
+      rentMonth: monthToDate(rentMonth),
+      // Simplified raise flow has no separate due-date input (2026-09-24,
+      // "something simpler") — defaults to today, still editable later from
+      // the requests table below if a real due date matters for a party.
+      dueDate: body.dueDate ? new Date(body.dueDate) : new Date(),
       proposedAmount: Number(proposedAmount),
       remarksRequester: body.remarksRequester ?? "",
       raisedBy: auth.session.username ?? "",

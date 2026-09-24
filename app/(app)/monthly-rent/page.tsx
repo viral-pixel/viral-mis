@@ -17,6 +17,12 @@ function fmtDate(d: string | null) {
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
+function thisMonthStr() {
+  return new Date().toISOString().slice(0, 7);
+}
+function fmtMonth(iso: string) {
+  return new Date(iso).toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" });
+}
 function StatusTag({ value }: { value: string }) {
   return value === "ACTIVE"
     ? <Tag color={C.green} bg="#E6F1E5">ACTIVE</Tag>
@@ -32,17 +38,20 @@ interface PartyRow {
   mobileNo: string; status: string; depositDate: string | null; depositAmount: number | null; remarks: string;
 }
 interface PaymentRow {
-  id: number; partyId: number; party: PartyRow; dueDate: string; proposedAmount: number; remarksRequester: string;
+  id: number; partyId: number; party: PartyRow; dueDate: string; rentMonth: string; proposedAmount: number; remarksRequester: string;
   raisedByName: string; raisedAt: string; status: string; paidAmount: number | null; datePaid: string | null;
   remarksAdmin: string; paidBy: string;
 }
 
+const SEEN_OPEN_IDS_KEY = "mr-seen-open-ids";
+
 export default function MonthlyRentPage() {
-  const [tab, setTab] = useState<"parties" | "payments">("parties");
+  const [tab, setTab] = useState<"parties" | "payments" | "history">("parties");
   const [parties, setParties] = useState<PartyRow[] | null>(null);
   const [payments, setPayments] = useState<PaymentRow[] | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
 
   const loadParties = () => fetch("/api/monthly-rent/parties").then((r) => { if (r.status === 403) { setForbidden(true); return null; } return r.json(); }).then((d) => d && setParties(d));
   const loadPayments = () => fetch("/api/monthly-rent/payments").then((r) => r.json()).then(setPayments);
@@ -53,6 +62,53 @@ export default function MonthlyRentPage() {
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setIsAdmin(!!d.user?.isAdmin));
   }, []);
 
+  // Keeps the requests list current even if Admin is sitting on a different
+  // tab (Rent Parties, History) when Ketan or Sandip sends one.
+  useEffect(() => {
+    const id = setInterval(loadPayments, 20000);
+    return () => clearInterval(id);
+  }, []);
+
+  const pushToast = (text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, text }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 7000);
+  };
+
+  // Admin-only: "when he sends the request that should come to me for
+  // approval" (2026-09-24) — a toast the moment a new Open request shows up,
+  // independent of whichever tab Admin currently has open. Same pattern as
+  // Vendor Payment's watcher.
+  useEffect(() => {
+    if (!isAdmin) return;
+    let seenIds: Set<number> | null = null;
+    try {
+      const stored = localStorage.getItem(SEEN_OPEN_IDS_KEY);
+      if (stored) seenIds = new Set(JSON.parse(stored));
+    } catch { /* localStorage unavailable — treat as first run */ }
+
+    const check = async () => {
+      const res = await fetch("/api/monthly-rent/payments?status=Open");
+      if (!res.ok) return;
+      const openRows: PaymentRow[] = await res.json();
+      const currentIds = new Set(openRows.map((r) => r.id));
+
+      if (seenIds) {
+        const newOnes = openRows.filter((r) => !seenIds!.has(r.id));
+        for (const r of newOnes) {
+          pushToast(`New rent payment request: ${r.party.partyName} — ${fmtMoney(r.proposedAmount)} (${fmtMonth(r.rentMonth)})`);
+        }
+      }
+      seenIds = currentIds;
+      try { localStorage.setItem(SEEN_OPEN_IDS_KEY, JSON.stringify([...currentIds])); } catch { /* ignore */ }
+    };
+
+    check();
+    const id = setInterval(check, 20000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
   if (forbidden) return <Empty text="Not authorized — Monthly Rent is only visible to Admin, Ketan and Sandip." />;
 
   const activeCount = (parties ?? []).filter((p) => p.status === "ACTIVE").length;
@@ -61,6 +117,15 @@ export default function MonthlyRentPage() {
 
   return (
     <div>
+      {toasts.length > 0 && (
+        <div style={{ position: "fixed", top: 18, right: 18, zIndex: 100, display: "flex", flexDirection: "column", gap: 8, maxWidth: 320 }}>
+          {toasts.map((t) => (
+            <div key={t.id} style={{ background: C.ink, color: "#fff", padding: "12px 14px", borderRadius: 8, fontSize: 13, boxShadow: "0 8px 20px rgba(0,0,0,0.25)" }}>
+              {t.text}
+            </div>
+          ))}
+        </div>
+      )}
       <SectionHead
         title="Monthly Rent"
         sub="Landlord/tenancy master and the payment cycle — raise for payment, Admin approves & pays. Visible only to Admin, Ketan and Sandip."
@@ -72,7 +137,7 @@ export default function MonthlyRentPage() {
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
-        {([["parties", "Rent Parties"], ["payments", "Payment Requests"]] as const).map(([key, label]) => (
+        {([["parties", "Rent Parties"], ["payments", "Payment Requests"], ["history", "Payment History (FY)"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -88,7 +153,8 @@ export default function MonthlyRentPage() {
       </div>
 
       {tab === "parties" && <PartiesTab parties={parties} isAdmin={isAdmin} onChanged={loadParties} />}
-      {tab === "payments" && <PaymentsTab payments={payments} parties={(parties ?? []).filter((p) => p.status === "ACTIVE")} isAdmin={isAdmin} onChanged={loadPayments} />}
+      {tab === "payments" && <PaymentsTab payments={payments} parties={parties ?? []} isAdmin={isAdmin} onChanged={loadPayments} />}
+      {tab === "history" && <HistoryTab payments={payments} />}
     </div>
   );
 }
@@ -266,11 +332,31 @@ function PartyForm({ initial, onClose, onSaved }: { initial?: PartyRow; onClose:
 }
 
 // ---------- Payment Requests tab ----------
+// Simplified per the user's explicit direction (2026-09-24): no modal, no
+// party dropdown to hunt through — every party in the chosen status
+// populates as its own pre-filled row (mirrors how Ketan worked in Excel:
+// everyone visible side by side, type the amount, add a remark, send).
 function PaymentsTab({ payments, parties, isAdmin, onChanged }: { payments: PaymentRow[] | null; parties: PartyRow[]; isAdmin: boolean; onChanged: () => void }) {
+  const [raiseFilter, setRaiseFilter] = useState<"ACTIVE" | "NOT ACTIVE">("ACTIVE");
   const [statusFilter, setStatusFilter] = useState<"Open" | "Closed" | "All">("Open");
-  const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<PaymentRow | null>(null);
   const [approving, setApproving] = useState<PaymentRow | null>(null);
+
+  const raiseParties = useMemo(() => parties.filter((p) => p.status === raiseFilter), [parties, raiseFilter]);
+
+  // Last paid amount per party — read straight off the already-loaded
+  // requests list (most recent Closed one by rentMonth), so Ketan/Sandip
+  // can see it right next to where they're raising the next one, no extra
+  // lookup or page to open.
+  const lastPaidByParty = useMemo(() => {
+    const map = new Map<number, PaymentRow>();
+    for (const p of payments ?? []) {
+      if (p.status !== "Closed" || p.paidAmount == null) continue;
+      const cur = map.get(p.partyId);
+      if (!cur || p.rentMonth > cur.rentMonth) map.set(p.partyId, p);
+    }
+    return map;
+  }, [payments]);
 
   const rows = useMemo(() => (payments ?? []).filter((p) => statusFilter === "All" || p.status === statusFilter), [payments, statusFilter]);
 
@@ -281,20 +367,57 @@ function PaymentsTab({ payments, parties, isAdmin, onChanged }: { payments: Paym
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+      <div style={{ marginBottom: 10, fontSize: 11.5, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        Send for Payment
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {(["ACTIVE", "NOT ACTIVE"] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setRaiseFilter(s)}
+            style={{
+              padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              background: raiseFilter === s ? C.teal : "#fff", color: raiseFilter === s ? "#fff" : C.ink,
+              border: `1px solid ${raiseFilter === s ? C.teal : C.border}`,
+            }}
+          >
+            {s === "ACTIVE" ? "Active" : "Not Active"}
+          </button>
+        ))}
+      </div>
+
+      {raiseParties.length === 0 ? <Empty text={`No ${raiseFilter === "ACTIVE" ? "active" : "not active"} parties.`} /> : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Party</Th><Th>Site</Th><Th>Last Month Paid</Th><Th>Rent For Month Of</Th>
+              <Th style={{ textAlign: "right" }}>Amount (₹)</Th><Th>Remarks</Th><Th />
+            </tr>
+          </thead>
+          <tbody>
+            {raiseParties.map((p) => (
+              <RaiseRow key={p.id} party={p} lastPaid={lastPaidByParty.get(p.id) ?? null} onSent={onChanged} />
+            ))}
+          </tbody>
+        </Table>
+      )}
+
+      <div style={{ marginTop: 26, marginBottom: 10, fontSize: 11.5, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        Sent Requests
+      </div>
+      <div style={{ marginBottom: 12 }}>
         <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)} style={{ width: 160 }}>
           <option value="Open">Open</option>
           <option value="Closed">Closed</option>
           <option value="All">All</option>
         </Select>
-        <Btn onClick={() => setShowAdd(true)}><Plus size={15} /> Send for Payment</Btn>
       </div>
 
       {payments === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="No payment requests for this filter." /> : (
         <Table>
           <thead>
             <tr>
-              <Th>Due Date</Th><Th>Party</Th><Th>Site</Th><Th style={{ textAlign: "right" }}>Proposed</Th>
+              <Th>Rent For</Th><Th>Party</Th><Th>Site</Th><Th style={{ textAlign: "right" }}>Proposed</Th>
               <Th>Requester Remarks</Th><Th>Raised By</Th><Th style={{ textAlign: "right" }}>Paid</Th>
               <Th>Date Paid</Th><Th>Admin Remarks</Th><Th>Status</Th><Th />
             </tr>
@@ -302,7 +425,7 @@ function PaymentsTab({ payments, parties, isAdmin, onChanged }: { payments: Paym
           <tbody>
             {rows.map((p) => (
               <tr key={p.id}>
-                <Td>{fmtDate(p.dueDate)}</Td>
+                <Td>{fmtMonth(p.rentMonth)}</Td>
                 <Td>{p.party.partyName}</Td>
                 <Td>{p.party.siteName || "—"}</Td>
                 <Td style={{ textAlign: "right" }}>{fmtMoney(p.proposedAmount)}</Td>
@@ -327,53 +450,99 @@ function PaymentsTab({ payments, parties, isAdmin, onChanged }: { payments: Paym
         </Table>
       )}
 
-      {showAdd && <PaymentForm parties={parties} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); onChanged(); }} />}
-      {editing && <PaymentForm parties={parties} initial={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />}
+      {editing && <PaymentEditModal parties={parties} row={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />}
       {approving && <ApproveModal row={approving} onClose={() => setApproving(null)} onSaved={() => { setApproving(null); onChanged(); }} />}
     </div>
   );
 }
 
-function PaymentForm({ parties, initial, onClose, onSaved }: { parties: PartyRow[]; initial?: PaymentRow; onClose: () => void; onSaved: () => void }) {
-  const [partyId, setPartyId] = useState(initial ? String(initial.partyId) : parties[0] ? String(parties[0].id) : "");
-  const [dueDate, setDueDate] = useState(initial?.dueDate.slice(0, 10) ?? todayStr());
-  const [proposedAmount, setProposedAmount] = useState(initial ? String(initial.proposedAmount) : "");
-  const [remarksRequester, setRemarksRequester] = useState(initial?.remarksRequester ?? "");
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+// One row per party, always visible, pre-filled — type the amount/remarks
+// and hit Send. Resets itself (keeping the chosen month) after sending so
+// the next one can go straight away, same spirit as Vendor Payment's grid.
+function RaiseRow({ party, lastPaid, onSent }: { party: PartyRow; lastPaid: PaymentRow | null; onSent: () => void }) {
+  const [rentMonth, setRentMonth] = useState(thisMonthStr());
+  const [amount, setAmount] = useState(party.netPay != null ? String(party.netPay) : "");
+  const [remarks, setRemarks] = useState("");
+  const [sending, setSending] = useState(false);
+  const [justSent, setJustSent] = useState(false);
 
-  const applyPartyDefault = (id: string) => {
-    setPartyId(id);
-    if (!initial) {
-      const p = parties.find((x) => String(x.id) === id);
-      if (p?.netPay != null) setProposedAmount(String(p.netPay));
+  const send = async () => {
+    if (!amount) { alert("Enter an amount"); return; }
+    setSending(true);
+    const res = await fetch("/api/monthly-rent/payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partyId: party.id, rentMonth, proposedAmount: amount, remarksRequester: remarks }),
+    });
+    setSending(false);
+    if (res.ok) {
+      setRemarks("");
+      setJustSent(true);
+      setTimeout(() => setJustSent(false), 2500);
+      onSent();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || "Could not send");
     }
   };
+  const onKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); send(); } };
+
+  return (
+    <tr onKeyDown={onKeyDown}>
+      <Td>{party.partyName}</Td>
+      <Td>{party.siteName || "—"}</Td>
+      <Td style={{ color: C.sub }}>
+        {lastPaid ? `${fmtMoney(lastPaid.paidAmount)} (${fmtMonth(lastPaid.rentMonth)})` : "—"}
+      </Td>
+      <Td><Input type="month" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 120 }} value={rentMonth} onChange={(e) => setRentMonth(e.target.value)} /></Td>
+      <Td><Input type="number" step="0.01" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 90, fontWeight: 700 }} value={amount} onChange={(e) => setAmount(e.target.value)} /></Td>
+      <Td><Input placeholder="Remarks" style={{ padding: "5px 6px", fontSize: 12.5, minWidth: 140 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Td>
+      <Td>
+        {justSent
+          ? <span style={{ color: C.green, fontWeight: 600, fontSize: 12.5 }}>✓ Sent</span>
+          : <Btn onClick={send} disabled={sending} style={{ padding: "5px 10px" }}>{sending ? "Sending…" : "Send"}</Btn>}
+      </Td>
+    </tr>
+  );
+}
+
+// Edit-only now (raising happens inline above) — party list is the full
+// roster, not just active, so an old request tied to a since-inactive
+// party still edits correctly.
+function PaymentEditModal({ parties, row, onClose, onSaved }: { parties: PartyRow[]; row: PaymentRow; onClose: () => void; onSaved: () => void }) {
+  const [partyId, setPartyId] = useState(String(row.partyId));
+  const [rentMonth, setRentMonth] = useState(row.rentMonth.slice(0, 7));
+  const [dueDate, setDueDate] = useState(row.dueDate.slice(0, 10));
+  const [proposedAmount, setProposedAmount] = useState(String(row.proposedAmount));
+  const [remarksRequester, setRemarksRequester] = useState(row.remarksRequester);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError("");
-    const url = initial ? `/api/monthly-rent/payments/${initial.id}` : "/api/monthly-rent/payments";
-    const res = await fetch(url, {
-      method: initial ? "PUT" : "POST",
+    const res = await fetch(`/api/monthly-rent/payments/${row.id}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ partyId, dueDate, proposedAmount, remarksRequester }),
+      body: JSON.stringify({ partyId, rentMonth, dueDate, proposedAmount, remarksRequester }),
     });
     if (res.ok) onSaved();
     else { const d = await res.json().catch(() => ({})); setError(d.error || "Could not save"); setSaving(false); }
   };
 
   return (
-    <Modal title={initial ? "Edit Payment Request" : "Send for Payment"} onClose={onClose} width={440}>
+    <Modal title="Edit Payment Request" onClose={onClose} width={440}>
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <Field label="Party (active only)">
-          <Select required value={partyId} onChange={(e) => applyPartyDefault(e.target.value)}>
-            {parties.length === 0 && <option value="">No active parties</option>}
-            {parties.map((p) => <option key={p.id} value={p.id}>{p.partyName} — {p.siteName}</option>)}
+        <Field label="Party">
+          <Select required value={partyId} onChange={(e) => setPartyId(e.target.value)}>
+            {parties.map((p) => <option key={p.id} value={p.id}>{p.partyName} — {p.siteName} {p.status === "NOT ACTIVE" ? "(Not Active)" : ""}</option>)}
           </Select>
         </Field>
-        <Field label="Due Date"><Input type="date" required value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Field>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Rent For Month Of"><Input type="month" required value={rentMonth} onChange={(e) => setRentMonth(e.target.value)} /></Field>
+          <Field label="Due Date"><Input type="date" required value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Field>
+        </div>
         <Field label="Proposed Amount (₹)"><Input type="number" step="0.01" required value={proposedAmount} onChange={(e) => setProposedAmount(e.target.value)} /></Field>
         <Field label="Remarks (deduct/add adjustments etc.)"><Textarea rows={2} value={remarksRequester} onChange={(e) => setRemarksRequester(e.target.value)} /></Field>
         {error && <div style={{ color: C.red, fontSize: 13 }}>{error}</div>}
@@ -399,7 +568,7 @@ function ApproveModal({ row, onClose, onSaved }: { row: PaymentRow; onClose: () 
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        partyId: row.partyId, dueDate: row.dueDate, proposedAmount: row.proposedAmount, remarksRequester: row.remarksRequester,
+        partyId: row.partyId, rentMonth: row.rentMonth.slice(0, 7), dueDate: row.dueDate, proposedAmount: row.proposedAmount, remarksRequester: row.remarksRequester,
         paidAmount, datePaid, remarksAdmin, status,
       }),
     });
@@ -412,7 +581,7 @@ function ApproveModal({ row, onClose, onSaved }: { row: PaymentRow; onClose: () 
     <Modal title={`Approve & Pay — ${row.party.partyName}`} onClose={onClose} width={440}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ fontSize: 13, color: C.sub }}>
-          Proposed {fmtMoney(row.proposedAmount)}, due {fmtDate(row.dueDate)}
+          Rent for {fmtMonth(row.rentMonth)} — proposed {fmtMoney(row.proposedAmount)}
           {row.remarksRequester ? ` — "${row.remarksRequester}"` : ""}
         </div>
         <Field label="Paid Amount (₹)"><Input type="number" step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} /></Field>
@@ -430,5 +599,79 @@ function ApproveModal({ row, onClose, onSaved }: { row: PaymentRow; onClose: () 
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ---------- Payment History (FY) tab ----------
+// Financial year = Apr-Mar (India). "Total amount tracking" per the user's
+// explicit request (2026-09-24) — how much actually moved to each party,
+// per FY, at a glance, not just this month's queue.
+function fyLabel(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getUTCFullYear();
+  const startYear = d.getUTCMonth() >= 3 ? y : y - 1; // getUTCMonth() 0-11, April = 3
+  return `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}
+
+function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
+  const { fys, partyTotals, fyTotals, grandTotal } = useMemo(() => {
+    const closed = (payments ?? []).filter((p) => p.status === "Closed" && p.paidAmount != null);
+    const fySet = new Set<string>();
+    const byParty = new Map<number, { name: string; site: string; byFy: Map<string, number>; total: number }>();
+    const byFy = new Map<string, number>();
+    let grand = 0;
+
+    for (const p of closed) {
+      const fy = fyLabel(p.datePaid ?? p.rentMonth);
+      fySet.add(fy);
+      const amt = p.paidAmount ?? 0;
+
+      const partyRec = byParty.get(p.partyId) ?? { name: p.party.partyName, site: p.party.siteName, byFy: new Map(), total: 0 };
+      partyRec.byFy.set(fy, (partyRec.byFy.get(fy) ?? 0) + amt);
+      partyRec.total += amt;
+      byParty.set(p.partyId, partyRec);
+
+      byFy.set(fy, (byFy.get(fy) ?? 0) + amt);
+      grand += amt;
+    }
+
+    const fys = [...fySet].sort();
+    const partyTotals = [...byParty.values()].sort((a, b) => b.total - a.total);
+    return { fys, partyTotals, fyTotals: byFy, grandTotal: grand };
+  }, [payments]);
+
+  if (payments === null) return <Empty text="Loading…" />;
+  if (partyTotals.length === 0) return <Empty text="No closed (paid) requests yet — totals will build up here as payments are made." />;
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12, fontSize: 13, color: C.sub }}>
+        Total actually paid, per party, per financial year (Apr–Mar) — from Closed requests only.
+      </div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Party</Th><Th>Site</Th>
+            {fys.map((fy) => <Th key={fy} style={{ textAlign: "right" }}>{fy}</Th>)}
+            <Th style={{ textAlign: "right" }}>Total</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {partyTotals.map((p) => (
+            <tr key={p.name + p.site}>
+              <Td>{p.name}</Td>
+              <Td>{p.site || "—"}</Td>
+              {fys.map((fy) => <Td key={fy} style={{ textAlign: "right" }}>{fmtMoney(p.byFy.get(fy) ?? 0)}</Td>)}
+              <Td style={{ textAlign: "right", fontWeight: 700 }}>{fmtMoney(p.total)}</Td>
+            </tr>
+          ))}
+          <tr>
+            <Td style={{ fontWeight: 700 }}>Total</Td><Td>{""}</Td>
+            {fys.map((fy) => <Td key={fy} style={{ textAlign: "right", fontWeight: 700 }}>{fmtMoney(fyTotals.get(fy) ?? 0)}</Td>)}
+            <Td style={{ textAlign: "right", fontWeight: 700 }}>{fmtMoney(grandTotal)}</Td>
+          </tr>
+        </tbody>
+      </Table>
+    </div>
   );
 }

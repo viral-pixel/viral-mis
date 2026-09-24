@@ -863,6 +863,7 @@ model RentPaymentEntry {
   party   RentParty @relation(fields: [partyId], references: [id])
 
   dueDate        DateTime // pay by this date
+  rentMonth      DateTime // which month's rent this is for — normalized to the 1st, UTC (2026-09-24, user's explicit request)
   proposedAmount Float // what Ketan/Sandip is asking to be paid this cycle
   remarksRequester String @default("") // ad hoc deduction/addition note from whoever raised it, e.g. "deduct 500 for water damage"
 

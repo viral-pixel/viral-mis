@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { requireMonthlyRentAccess } from "@/app/lib/monthlyRentAccess";
 
+function monthToDate(v: string): Date {
+  const [y, m] = v.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1));
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireMonthlyRentAccess();
   if (!auth.ok) return auth.response;
@@ -22,7 +27,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const data: Record<string, unknown> = {
     partyId: Number(body.partyId),
-    dueDate: new Date(body.dueDate),
+    dueDate: body.dueDate ? new Date(body.dueDate) : new Date(),
+    rentMonth: monthToDate(body.rentMonth),
     proposedAmount: Number(body.proposedAmount),
     remarksRequester: body.remarksRequester ?? "",
   };
