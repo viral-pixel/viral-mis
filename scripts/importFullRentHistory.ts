@@ -23,7 +23,6 @@ const prisma = new PrismaClient();
 const SOURCE = "C:/Users/HP/OneDrive/Desktop/Monthly Rent Related Sheet.xlsx";
 const FIRST_MONTH_COL = 9;
 const LAST_MONTH_COL = 144;
-const IMPORT_BATCH = "import-rent-history-2026-09-24";
 
 function monthFromSerial(serial: number): Date | null {
   const p = XLSX.SSF.parse_date_code(serial);
@@ -48,9 +47,13 @@ async function main() {
   console.log(`Resolved ${monthCols.length} month columns: ${monthCols[0].month.toISOString().slice(0, 7)} .. ${monthCols[monthCols.length - 1].month.toISOString().slice(0, 7)}`);
 
   // Clear anything from a previous run of this script or the narrower
-  // Sep-26-only backfill, so re-running never duplicates rows.
+  // Sep-26-only backfill, so re-running never duplicates rows. Matches on
+  // the plain remarksAdmin text (not an embedded batch id) since that's
+  // what's actually shown to the user in the Party Ledger tab, and stays
+  // presentable there rather than leaking this script's internal name.
+  const IMPORT_REMARK = "Imported from source sheet (historical figure)";
   const deletedOld = await prisma.rentPaymentEntry.deleteMany({
-    where: { OR: [{ remarksAdmin: { contains: IMPORT_BATCH } }, { remarksAdmin: { contains: "Imported from source sheet — Sep-26 actual" } }] },
+    where: { OR: [{ remarksAdmin: IMPORT_REMARK }, { remarksAdmin: { contains: "Imported from source sheet — Sep-26 actual" } }] },
   });
   console.log(`Cleared ${deletedOld.count} rows from earlier import runs.`);
 
@@ -103,7 +106,7 @@ async function main() {
         status: "Closed",
         paidAmount: v,
         datePaid: dt,
-        remarksAdmin: `${IMPORT_BATCH}: historical figure from source sheet`,
+        remarksAdmin: IMPORT_REMARK,
         paidBy: "Import",
         closedAt: dt,
       });

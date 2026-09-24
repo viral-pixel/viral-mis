@@ -54,7 +54,7 @@ interface PaymentRow {
 const SEEN_OPEN_IDS_KEY = "mr-seen-open-ids";
 
 export default function MonthlyRentPage() {
-  const [tab, setTab] = useState<"parties" | "payments" | "history">("parties");
+  const [tab, setTab] = useState<"parties" | "payments" | "history" | "ledger">("parties");
   const [parties, setParties] = useState<PartyRow[] | null>(null);
   const [payments, setPayments] = useState<PaymentRow[] | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -145,7 +145,7 @@ export default function MonthlyRentPage() {
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
-        {([["parties", "Rent Parties"], ["payments", "Payment Requests"], ["history", "Payment History (FY)"]] as const).map(([key, label]) => (
+        {([["parties", "Rent Parties"], ["payments", "Payment Requests"], ["history", "Payment History (FY)"], ["ledger", "Party Ledger"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -163,6 +163,7 @@ export default function MonthlyRentPage() {
       {tab === "parties" && <PartiesTab parties={parties} isAdmin={isAdmin} onChanged={loadParties} />}
       {tab === "payments" && <PaymentsTab payments={payments} parties={parties ?? []} isAdmin={isAdmin} onChanged={loadPayments} />}
       {tab === "history" && <HistoryTab payments={payments} />}
+      {tab === "ledger" && <PartyLedgerTab parties={parties ?? []} payments={payments} />}
     </div>
   );
 }
@@ -738,11 +739,12 @@ function currentFyLabel(): string {
 }
 
 function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
-  const { fys, partyRowsByFy, fyTotals, grandTotal } = useMemo(() => {
+  const { fys, partyRowsByFy, fyTotals, grandTotal, overallRows } = useMemo(() => {
     const closed = (payments ?? []).filter((p) => p.status === "Closed" && p.paidAmount != null);
     const fySet = new Set<string>();
     const byFyParty = new Map<string, Map<number, { name: string; site: string; amount: number }>>();
     const byFy = new Map<string, number>();
+    const overallByParty = new Map<number, { name: string; site: string; amount: number }>();
     let grand = 0;
 
     for (const p of closed) {
@@ -756,6 +758,10 @@ function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
       partiesForFy.set(p.partyId, rec);
       byFyParty.set(fy, partiesForFy);
 
+      const overallRec = overallByParty.get(p.partyId) ?? { name: p.party.partyName, site: p.party.siteName, amount: 0 };
+      overallRec.amount += amt;
+      overallByParty.set(p.partyId, overallRec);
+
       byFy.set(fy, (byFy.get(fy) ?? 0) + amt);
       grand += amt;
     }
@@ -765,36 +771,42 @@ function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
     for (const [fy, parties] of byFyParty) {
       partyRowsByFy.set(fy, [...parties.values()].sort((a, b) => b.amount - a.amount));
     }
-    return { fys, partyRowsByFy, fyTotals: byFy, grandTotal: grand };
+    const overallRows = [...overallByParty.values()].sort((a, b) => b.amount - a.amount);
+    return { fys, partyRowsByFy, fyTotals: byFy, grandTotal: grand, overallRows };
   }, [payments]);
 
+  const ALL_YEARS = "All Years (Overall)";
   const [selectedFy, setSelectedFy] = useState<string>(currentFyLabel());
 
   useEffect(() => {
-    if (fys.length > 0 && !fys.includes(selectedFy)) setSelectedFy(fys[fys.length - 1]);
+    if (fys.length > 0 && selectedFy !== ALL_YEARS && !fys.includes(selectedFy)) setSelectedFy(fys[fys.length - 1]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fys.join(",")]);
 
   if (payments === null) return <Empty text="Loading…" />;
   if (fys.length === 0) return <Empty text="No closed (paid) requests yet — totals will build up here as payments are made." />;
 
-  const rows = partyRowsByFy.get(selectedFy) ?? [];
-  const totalForFy = fyTotals.get(selectedFy) ?? 0;
+  const isOverall = selectedFy === ALL_YEARS;
+  const rows = isOverall ? overallRows : (partyRowsByFy.get(selectedFy) ?? []);
+  const totalForFy = isOverall ? grandTotal : (fyTotals.get(selectedFy) ?? 0);
 
   return (
     <div>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 18 }}>
         <Field label="Financial Year">
-          <Select value={selectedFy} onChange={(e) => setSelectedFy(e.target.value)} style={{ width: 160 }}>
+          <Select value={selectedFy} onChange={(e) => setSelectedFy(e.target.value)} style={{ width: 200 }}>
             {fys.map((fy) => <option key={fy} value={fy}>{fy}</option>)}
+            <option value={ALL_YEARS}>{ALL_YEARS}</option>
           </Select>
         </Field>
-        <StatCard icon={IndianRupee} label={`Total Paid — ${selectedFy}`} value={fmtMoney(totalForFy)} tint={C.teal} />
+        <StatCard icon={IndianRupee} label={`Total Paid — ${isOverall ? "All Years" : selectedFy}`} value={fmtMoney(totalForFy)} tint={C.teal} />
         <StatCard icon={ListChecks} label="Parties Paid" value={rows.length} tint={C.sub} />
       </div>
 
       <div style={{ marginBottom: 10, fontSize: 13, color: C.sub }}>
-        Amount actually paid per party for {selectedFy} (Apr–Mar) — from Closed requests only.
+        {isOverall
+          ? `Amount actually paid per party, overall, across all ${fys.length} financial years on record — from Closed requests only.`
+          : `Amount actually paid per party for ${selectedFy} (Apr–Mar) — from Closed requests only.`}
       </div>
       {rows.length === 0 ? <Empty text={`No payments closed in ${selectedFy}.`} /> : (
         <Table>
@@ -814,11 +826,74 @@ function HistoryTab({ payments }: { payments: PaymentRow[] | null }) {
           </tbody>
         </Table>
       )}
+    </div>
+  );
+}
 
-      {fys.length > 1 && (
-        <div style={{ marginTop: 10, fontSize: 12, color: C.sub }}>
-          Grand total across all {fys.length} financial years on record: {fmtMoney(grandTotal)}
-        </div>
+// ---------- Party Ledger tab ----------
+// "Select a single party and see his entire flow over these many months"
+// (2026-09-24, user's explicit request) — every month on record for one
+// party, in one place, instead of hunting across FY tables.
+function PartyLedgerTab({ parties, payments }: { parties: PartyRow[]; payments: PaymentRow[] | null }) {
+  const sortedParties = useMemo(() => [...parties].sort((a, b) => a.partyName.localeCompare(b.partyName)), [parties]);
+  const [partyId, setPartyId] = useState<string>("");
+
+  useEffect(() => {
+    if (!partyId && sortedParties.length > 0) setPartyId(String(sortedParties[0].id));
+  }, [sortedParties, partyId]);
+
+  const party = sortedParties.find((p) => String(p.id) === partyId) ?? null;
+
+  const entries = useMemo(() => {
+    if (!party) return [];
+    return (payments ?? []).filter((p) => p.partyId === party.id).sort((a, b) => b.rentMonth.localeCompare(a.rentMonth));
+  }, [payments, party]);
+
+  const totalPaid = entries.filter((e) => e.status === "Closed").reduce((s, e) => s + (e.paidAmount ?? 0), 0);
+  const monthsPaid = entries.filter((e) => e.status === "Closed").length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 18 }}>
+        <Field label="Party">
+          <Select value={partyId} onChange={(e) => setPartyId(e.target.value)} style={{ width: 320 }}>
+            {sortedParties.map((p) => (
+              <option key={p.id} value={p.id}>{p.partyName} — {p.siteName}{p.status === "NOT ACTIVE" ? " (Not Active)" : ""}</option>
+            ))}
+          </Select>
+        </Field>
+        {party && (
+          <>
+            <StatCard icon={IndianRupee} label="Total Paid (All Time)" value={fmtMoney(totalPaid)} tint={C.teal} />
+            <StatCard icon={ListChecks} label="Months Paid" value={monthsPaid} tint={C.sub} />
+            <StatCard icon={ListChecks} label="Status" value={party.status === "ACTIVE" ? "Active" : "Not Active"} tint={party.status === "ACTIVE" ? C.green : C.faint} />
+          </>
+        )}
+      </div>
+
+      {!party ? <Empty text="No parties yet." /> : entries.length === 0 ? (
+        <Empty text={`No payment history yet for ${party.partyName}.`} />
+      ) : (
+        <Table>
+          <thead><tr><Th>Month</Th><Th style={{ textAlign: "right" }}>Net Payable</Th><Th style={{ textAlign: "right" }}>Paid</Th><Th>Date Paid</Th><Th>Status</Th><Th>Remarks</Th></tr></thead>
+          <tbody>
+            {entries.map((e) => (
+              <tr key={e.id}>
+                <Td>{fmtMonth(e.rentMonth)}</Td>
+                <Td style={{ textAlign: "right" }}>{fmtMoney(e.proposedAmount)}</Td>
+                <Td style={{ textAlign: "right", fontWeight: 600 }}>{fmtMoney(e.paidAmount)}</Td>
+                <Td>{fmtDate(e.datePaid)}</Td>
+                <Td><PaymentStatusTag value={e.status} /></Td>
+                <Td style={{ color: C.sub }}>{e.remarksAdmin || e.remarksRequester || "—"}</Td>
+              </tr>
+            ))}
+            <tr>
+              <Td style={{ fontWeight: 700 }}>Total</Td><Td>{""}</Td>
+              <Td style={{ textAlign: "right", fontWeight: 700 }}>{fmtMoney(totalPaid)}</Td>
+              <Td>{""}</Td><Td>{""}</Td><Td>{""}</Td>
+            </tr>
+          </tbody>
+        </Table>
       )}
     </div>
   );
