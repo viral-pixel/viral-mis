@@ -16,11 +16,14 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = {};
   if (status) where.status = status;
 
+  // 10,000 headroom — the historical backfill alone put this over 2,300
+  // rows (2026-09-24), so the old 1000 cap was silently truncating the
+  // Payment History tab to only its oldest slice.
   const entries = await prisma.rentPaymentEntry.findMany({
     where,
     include: { party: true },
     orderBy: [{ dueDate: "asc" }, { id: "desc" }],
-    take: 1000,
+    take: 10000,
   });
   return NextResponse.json(entries);
 }
