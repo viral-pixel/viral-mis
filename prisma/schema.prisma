@@ -900,8 +900,10 @@ model RentPaymentEntry {
 // ---- SubModule: "Outstanding Payment Tracker" (Sandip Reports) ----
 // Sandip prepares a finished Excel (his own formulas/totals) about twice a
 // month and uploads it; the app only stores and displays it — it never
-// computes anything (user's explicit instruction, 2026-09-26). Each upload
-// is one snapshot, kept whole as read from the file: the summary block,
+// computes anything (user's explicit instruction, 2026-09-26). Only the
+// latest upload is kept — each new one replaces the previous (user's
+// request, same day); uploadedAt is the recorded upload date and time. The
+// row is the file kept whole as read: the summary block,
 // the column headers (the month columns shift between uploads, so they're
 // stored, not hardcoded) and the party rows — as JSON, since the shape is
 // "whatever his sheet looks like this time" and nothing here is queried.

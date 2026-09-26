@@ -4,21 +4,15 @@ import { requireModuleAccessBySubModuleSlug, requireModuleReadAccess } from "@/a
 import { OUTSTANDING_SUBMODULE_SLUG } from "@/app/lib/outstandingMeta";
 import { parseOutstandingWorkbook } from "@/app/lib/outstandingParse";
 
-// List of snapshots (newest "as on" first) plus the full content of one —
-// the requested id, else the latest. canUpload is true only for Admin or
-// someone who really holds the module (a global viewer can read but not add).
-export async function GET(req: NextRequest) {
+// The one current file (the latest upload) — each new upload replaces the
+// previous one (user's request, 2026-09-26: "old file can be overwritten by
+// the new file"). canUpload is true only for Admin or someone who really
+// holds the module (a global viewer can read but not add).
+export async function GET() {
   const auth = await requireModuleReadAccess(OUTSTANDING_SUBMODULE_SLUG);
   if (!auth.ok) return auth.response;
 
-  const snapshots = await prisma.outstandingSnapshot.findMany({
-    orderBy: [{ asOnDate: { sort: "desc", nulls: "last" } }, { uploadedAt: "desc" }],
-    select: { id: true, asOnLabel: true, asOnDate: true, fileName: true, uploadedByName: true, uploadedAt: true },
-  });
-
-  const wantedId = Number(req.nextUrl.searchParams.get("id"));
-  const pickId = wantedId && snapshots.some((s) => s.id === wantedId) ? wantedId : snapshots[0]?.id;
-  const full = pickId ? await prisma.outstandingSnapshot.findUnique({ where: { id: pickId } }) : null;
+  const full = await prisma.outstandingSnapshot.findFirst({ orderBy: { uploadedAt: "desc" } });
 
   let canUpload = !!auth.session.isAdmin;
   if (!canUpload && auth.session.userId) {
@@ -30,8 +24,6 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     canUpload,
-    isAdmin: !!auth.session.isAdmin,
-    snapshots,
     selected: full && {
       id: full.id,
       title: full.title,
@@ -66,6 +58,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No party rows found below the table header" }, { status: 400 });
   }
 
+  // Create the new one first, then drop everything older — if the create fails
+  // the previous file is still there.
   const snap = await prisma.outstandingSnapshot.create({
     data: {
       title: parsed.title,
@@ -79,5 +73,6 @@ export async function POST(req: NextRequest) {
       uploadedByName: auth.session.displayName ?? "",
     },
   });
+  await prisma.outstandingSnapshot.deleteMany({ where: { id: { not: snap.id } } });
   return NextResponse.json({ id: snap.id, rows: parsed.rows.length, warnings: parsed.warnings }, { status: 201 });
 }
