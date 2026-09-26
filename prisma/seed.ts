@@ -8,6 +8,7 @@ import { VENDOR_PAYMENT_SUBMODULE_SLUG } from "../app/lib/vendorPaymentMeta";
 import { MANAGEMENT_MODULE_NAME, VEG_COST_ANALYSIS_SUBMODULE_SLUG } from "../app/lib/managementReportsMeta";
 import { MISC_MODULE_NAME, MISC_SUBMODULE_SLUG } from "../app/lib/miscExpensesMeta";
 import { ALKESH_MODULE_NAME, ALKESH_SUBMODULE_SLUG } from "../app/lib/alkeshMeta";
+import { OUTSTANDING_SUBMODULE_SLUG } from "../app/lib/outstandingMeta";
 
 const prisma = new PrismaClient();
 
@@ -154,6 +155,12 @@ async function main() {
       name: "Miscellaneous Expenses",
       slug: MISC_SUBMODULE_SLUG,
     },
+  });
+
+  await prisma.subModule.upsert({
+    where: { slug: OUTSTANDING_SUBMODULE_SLUG },
+    update: {},
+    create: { moduleId: sandipModule.id, name: "Outstanding Payment Tracker", slug: OUTSTANDING_SUBMODULE_SLUG },
   });
 
   // Alkesh Reports: one of the original 6 person-based modules (2026-08-29

@@ -896,3 +896,28 @@ model RentPaymentEntry {
   @@index([status])
   @@index([dueDate])
 }
+
+// ---- SubModule: "Outstanding Payment Tracker" (Sandip Reports) ----
+// Sandip prepares a finished Excel (his own formulas/totals) about twice a
+// month and uploads it; the app only stores and displays it — it never
+// computes anything (user's explicit instruction, 2026-09-26). Each upload
+// is one snapshot, kept whole as read from the file: the summary block,
+// the column headers (the month columns shift between uploads, so they're
+// stored, not hardcoded) and the party rows — as JSON, since the shape is
+// "whatever his sheet looks like this time" and nothing here is queried.
+model OutstandingSnapshot {
+  id             Int       @id @default(autoincrement())
+  title          String    @default("")
+  asOnLabel      String    @default("") // e.g. "As on 25-Sep-2026", as typed in the sheet
+  asOnDate       DateTime? // parsed from asOnLabel when possible, for ordering
+  fileName       String    @default("")
+  summaryJson    String    @default("[]") // [{label, value}] — the sheet's own summary block
+  columnsJson    String    @default("[]") // table header labels, in order
+  rowsJson       String    @default("[]") // table rows, values as they sit in the sheet
+  uploadedBy     String    @default("")
+  uploadedByName String    @default("")
+  uploadedAt     DateTime  @default(now())
+
+  @@index([asOnDate])
+  @@index([uploadedAt])
+}
